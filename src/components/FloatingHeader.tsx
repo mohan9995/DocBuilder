@@ -35,6 +35,7 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
   onOpenSettings,
   onOpenGuide,
 }) => {
+  const [isThemeOpen, setIsThemeOpen] = React.useState(false);
   const platform = getPlatformName();
 
   const THEMES: { id: ThemePreset; name: string; dotColor: string }[] = [
@@ -84,31 +85,46 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
         {/* Right Floating Actions */}
         <div className="flex items-center space-x-2 p-1 rounded-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-lg">
           {/* Theme Selector */}
-          <div className="relative group">
+          <div className="relative">
             <button
+              onClick={() => setIsThemeOpen(!isThemeOpen)}
               className="p-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-white/60 dark:hover:bg-slate-800 transition-colors flex items-center"
               title="Change Ambiance Theme"
             >
               <Palette className="w-4 h-4" />
             </button>
 
+            {/* Click-outside backdrop */}
+            {isThemeOpen && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsThemeOpen(false)}
+              />
+            )}
+
             {/* Dropdown presets */}
-            <div className="absolute right-0 top-full mt-2 hidden group-hover:flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/60 dark:border-slate-800 rounded-2xl p-1.5 shadow-2xl min-w-[170px] z-50 animate-in fade-in zoom-in-95 duration-150">
-              {THEMES.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTheme(t.id)}
-                  className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left ${
-                    theme === t.id
-                      ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  <span className={`w-2.5 h-2.5 rounded-full ${t.dotColor}`} />
-                  <span>{t.name}</span>
-                </button>
-              ))}
-            </div>
+            {isThemeOpen && (
+              <div className="absolute right-0 top-full mt-2 flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-white/60 dark:border-slate-800 rounded-2xl p-1.5 shadow-2xl min-w-[175px] z-50 animate-in fade-in zoom-in-95 duration-150">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setTheme(t.id);
+                      setIsThemeOpen(false);
+                      sounds.playTick();
+                    }}
+                    className={`flex items-center space-x-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors text-left ${
+                      theme === t.id
+                        ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-full ${t.dotColor}`} />
+                    <span>{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Sound FX Toggle */}
