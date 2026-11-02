@@ -276,13 +276,23 @@ export async function bakePdfAnnotations(
       else if (ann.color === 'red') textColor = rgb(0.85, 0.15, 0.15);
       else if (ann.color === 'white') textColor = rgb(1, 1, 1);
 
-      page.drawText(ann.text, {
-        x,
-        y,
-        size: ann.fontSize,
-        font: ann.isBold ? boldFont : regularFont,
-        color: textColor,
-      });
+      if (ann.isCallout) {
+        page.drawText(`[i] ${ann.text}`, {
+          x,
+          y,
+          size: ann.fontSize || 14,
+          font: boldFont,
+          color: rgb(0.15, 0.35, 0.85),
+        });
+      } else {
+        page.drawText(ann.text, {
+          x,
+          y,
+          size: ann.fontSize,
+          font: ann.isBold ? boldFont : regularFont,
+          color: textColor,
+        });
+      }
     }
   }
 

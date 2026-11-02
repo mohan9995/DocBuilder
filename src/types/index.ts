@@ -46,6 +46,8 @@ export interface TextAnnotation {
   fontSize: number;
   color: string;
   isBold?: boolean;
+  isCallout?: boolean; // Help (i) icon mode
+  isOpen?: boolean; // Callout popover open state
 }
 
 export interface SignatureAnnotation {

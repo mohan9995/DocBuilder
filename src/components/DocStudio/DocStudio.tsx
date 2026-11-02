@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   Type,
@@ -17,13 +17,16 @@ import {
   X,
   AlertCircle,
   FileText,
-  Image as ImageIcon,
+  GripHorizontal,
+  Info,
+  Maximize2,
+  Check,
 } from 'lucide-react';
 import { TextAnnotation, SignatureAnnotation, WatermarkConfig } from '../../types';
 import { SignatureModal } from './SignatureModal';
 import { bakePdfAnnotations } from '../../services/pdfConverter';
 import { loadImage } from '../../services/imageConverter';
-import { saveFileNatively, shareFile } from '../../services/nativeShare';
+import { saveFileNatively } from '../../services/nativeShare';
 import { sounds } from '../../services/soundService';
 
 // Ensure PDF.js uses public static worker
@@ -46,10 +49,18 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Active Tool Mode
-  const [activeTool, setActiveTool] = useState<'select' | 'text' | 'signature' | 'watermark'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'text' | 'info-pin' | 'signature' | 'watermark'>('select');
 
-  // Selected annotation for styling
-  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  // Dragging State for Text and Signatures
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragRef = useRef<{
+    id: string;
+    type: 'text' | 'signature';
+    startX: number;
+    startY: number;
+    initialXPct: number;
+    initialYPct: number;
+  } | null>(null);
 
   // Annotations State
   const [textAnnotations, setTextAnnotations] = useState<TextAnnotation[]>([]);
@@ -203,7 +214,6 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
         }
       } catch (err: any) {
         if (err?.name === 'RenderingCancelledException') {
-          // Expected when rapid page switching or React StrictMode re-mounts
           return;
         }
         console.error('Failed to render document page:', err);
@@ -224,27 +234,77 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     };
   }, [file, currentPage, pageRotations[currentPage], deletedPages]);
 
-  // Handle click on document canvas to insert text
+  // DRAG & DROP POINTER HANDLERS
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    id: string,
+    type: 'text' | 'signature',
+    initialXPct: number,
+    initialYPct: number
+  ) => {
+    e.stopPropagation();
+    setDraggingId(id);
+    dragRef.current = {
+      id,
+      type,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialXPct,
+      initialYPct,
+    };
+  };
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragRef.current || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    const dxPct = (dx / rect.width) * 100;
+    const dyPct = (dy / rect.height) * 100;
+
+    const newXPct = Math.max(0, Math.min(94, dragRef.current.initialXPct + dxPct));
+    const newYPct = Math.max(0, Math.min(94, dragRef.current.initialYPct + dyPct));
+
+    if (dragRef.current.type === 'text') {
+      setTextAnnotations((prev) =>
+        prev.map((t) => (t.id === dragRef.current?.id ? { ...t, xPercent: newXPct, yPercent: newYPct } : t))
+      );
+    } else if (dragRef.current.type === 'signature') {
+      setSignatures((prev) =>
+        prev.map((s) => (s.id === dragRef.current?.id ? { ...s, xPercent: newXPct, yPercent: newYPct } : s))
+      );
+    }
+  }, []);
+
+  const handlePointerUp = useCallback(() => {
+    setDraggingId(null);
+    dragRef.current = null;
+  }, []);
+
+  // Handle click on document canvas to insert text or info pin
   const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool !== 'text' || !containerRef.current) return;
+    if ((activeTool !== 'text' && activeTool !== 'info-pin') || !containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const xPercent = Math.max(0, Math.min(92, ((e.clientX - rect.left) / rect.width) * 100));
-    const yPercent = Math.max(0, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100));
+    const xPercent = Math.max(0, Math.min(90, ((e.clientX - rect.left) / rect.width) * 100));
+    const yPercent = Math.max(0, Math.min(90, ((e.clientY - rect.top) / rect.height) * 100));
+
+    const isCallout = activeTool === 'info-pin';
 
     const newAnnotation: TextAnnotation = {
       id: `text-${Date.now()}`,
       page: currentPage,
       xPercent,
       yPercent,
-      text: 'Click to type',
+      text: isCallout ? 'Informational note / review text' : 'Click to type',
       fontSize: 16,
       color: 'black',
       isBold: false,
+      isCallout,
+      isOpen: isCallout, // open immediately when created in pin mode
     };
 
     setTextAnnotations((prev) => [...prev, newAnnotation]);
-    setSelectedTextId(newAnnotation.id);
     setActiveTool('select');
     sounds.playTick();
   };
@@ -254,7 +314,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     const newSig: SignatureAnnotation = {
       id: `sig-${Date.now()}`,
       page: currentPage,
-      xPercent: 40,
+      xPercent: 35,
       yPercent: 70,
       widthPercent: 28,
       heightPercent: 12,
@@ -313,7 +373,11 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
   const currentPageSigs = signatures.filter((s) => s.page === currentPage);
 
   return (
-    <div className="w-full flex flex-col space-y-4">
+    <div
+      className="w-full flex flex-col space-y-4 select-none"
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+    >
       {/* Studio Top Control Strip */}
       <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
         {/* Left: Tools */}
@@ -332,6 +396,23 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           >
             <Type className="w-4 h-4" />
             <span>Add Text</span>
+          </button>
+
+          {/* Help (i) Info Pin Tool */}
+          <button
+            onClick={() => {
+              sounds.playTick();
+              setActiveTool(activeTool === 'info-pin' ? 'select' : 'info-pin');
+            }}
+            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+              activeTool === 'info-pin'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-400'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+            }`}
+            title="Drop an interactive (i) help pin with selectable popover text"
+          >
+            <Info className="w-4 h-4 text-blue-400" />
+            <span>Help Pin (i)</span>
           </button>
 
           {/* Signature Tool */}
@@ -356,7 +437,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
-            <span>{watermark.enabled ? `Watermark: ${watermark.text}` : 'Watermark'}</span>
+            <span>{watermark.enabled ? `Watermark: ON` : 'Watermark'}</span>
           </button>
 
           <div className="h-5 w-px bg-slate-800 hidden sm:block" />
@@ -478,7 +559,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
               Select a Document or Image to Edit & Sign
             </h4>
             <p className="text-xs text-slate-400 mb-4">
-              Add text annotations, draw official digital signatures, and customize pages
+              Add text annotations, drop (i) help pins, draw official digital signatures, and drag them anywhere
             </p>
             <span className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md">
               Browse Files (PDF or Image)
@@ -488,8 +569,13 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           <div className="flex flex-col items-center w-full">
             {/* Active Prompt Tool Banner */}
             {activeTool === 'text' && (
-              <div className="mb-3 px-3 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium animate-pulse">
-                Click anywhere on the document to drop a text box ✏️
+              <div className="mb-3 px-3.5 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium animate-pulse">
+                Click anywhere on the document to place text • Drag the ✥ handle to reposition ✏️
+              </div>
+            )}
+            {activeTool === 'info-pin' && (
+              <div className="mb-3 px-3.5 py-1.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-medium animate-pulse">
+                Click anywhere to place an interactive Help (i) pin ℹ️
               </div>
             )}
 
@@ -516,13 +602,13 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                 ref={containerRef}
                 onClick={handleStageClick}
                 className={`relative shadow-2xl rounded-xl overflow-hidden bg-white border border-slate-700/60 max-w-full cursor-${
-                  activeTool === 'text' ? 'crosshair' : 'default'
+                  activeTool === 'text' || activeTool === 'info-pin' ? 'crosshair' : 'default'
                 }`}
               >
                 {/* PDF or Image Canvas */}
                 <canvas
                   ref={canvasRef}
-                  className="block max-w-full h-auto mx-auto"
+                  className="block max-w-full h-auto mx-auto pointer-events-none"
                   style={{ display: 'block' }}
                 />
 
@@ -537,7 +623,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                   </div>
                 )}
 
-                {/* Text Annotations Layer */}
+                {/* Text Annotations & Help (i) Pins Layer */}
                 {currentPageTexts.map((ann) => (
                   <div
                     key={ann.id}
@@ -545,65 +631,188 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                       left: `${ann.xPercent}%`,
                       top: `${ann.yPercent}%`,
                     }}
-                    className="absolute z-20 group"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedTextId(ann.id);
-                    }}
+                    className={`absolute z-20 ${
+                      draggingId === ann.id ? 'opacity-80 scale-105 z-30' : ''
+                    }`}
                   >
-                    <div className="flex items-center bg-white/95 rounded-lg border-2 border-indigo-500 shadow-xl px-2 py-1">
-                      <input
-                        type="text"
-                        value={ann.text}
-                        onChange={(e) =>
-                          setTextAnnotations((prev) =>
-                            prev.map((t) =>
-                              t.id === ann.id ? { ...t, text: e.target.value } : t
-                            )
-                          )
-                        }
-                        style={{
-                          fontSize: `${ann.fontSize}px`,
-                          color: ann.color === 'blue' ? '#1e40af' : ann.color === 'red' ? '#dc2626' : '#0f172a',
-                          fontWeight: ann.isBold ? 'bold' : 'normal',
-                        }}
-                        className="bg-transparent outline-none font-sans font-medium min-w-[80px]"
-                        autoFocus
-                      />
+                    {/* CASE 1: Help (i) Pin Mode */}
+                    {ann.isCallout ? (
+                      <div className="relative">
+                        {/* The Circular (i) Pin Button with drag handle */}
+                        <div
+                          className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-500 text-white rounded-full p-1 shadow-xl ring-2 ring-white cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTextAnnotations((prev) =>
+                              prev.map((t) => (t.id === ann.id ? { ...t, isOpen: !t.isOpen } : t))
+                            );
+                            sounds.playTick();
+                          }}
+                        >
+                          {/* Drag handle */}
+                          <div
+                            onPointerDown={(e) =>
+                              handlePointerDown(e, ann.id, 'text', ann.xPercent, ann.yPercent)
+                            }
+                            className="p-1 cursor-grab active:cursor-grabbing hover:bg-blue-700 rounded-full"
+                            title="Drag pin anywhere"
+                          >
+                            <GripHorizontal className="w-3 h-3 text-blue-200" />
+                          </div>
+                          <Info className="w-4 h-4 pr-0.5" />
+                        </div>
 
-                      {/* Font Size & Delete */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTextAnnotations((prev) =>
-                            prev.map((t) =>
-                              t.id === ann.id
-                                ? { ...t, fontSize: t.fontSize >= 28 ? 14 : t.fontSize + 4 }
-                                : t
-                            )
-                          );
-                        }}
-                        className="ml-1 px-1 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 font-mono"
-                        title="Increase size"
-                      >
-                        {ann.fontSize}pt
-                      </button>
+                        {/* Expandable Popover Card with User-Selectable Text */}
+                        {ann.isOpen && (
+                          <div
+                            className="absolute top-9 left-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-blue-200 dark:border-blue-800 rounded-2xl p-3 shadow-2xl min-w-[220px] max-w-xs animate-in zoom-in-95 duration-150"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800 mb-2">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center space-x-1">
+                                <Info className="w-3 h-3" />
+                                <span>Info Note (Selectable)</span>
+                              </span>
+                              <div className="flex items-center space-x-1">
+                                {/* Switch back to normal text */}
+                                <button
+                                  onClick={() =>
+                                    setTextAnnotations((prev) =>
+                                      prev.map((t) =>
+                                        t.id === ann.id ? { ...t, isCallout: false } : t
+                                      )
+                                    )
+                                  }
+                                  className="text-[10px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-800"
+                                  title="Switch to Normal Text"
+                                >
+                                  T
+                                </button>
+                                {/* Close popover */}
+                                <button
+                                  onClick={() =>
+                                    setTextAnnotations((prev) =>
+                                      prev.map((t) => (t.id === ann.id ? { ...t, isOpen: false } : t))
+                                    )
+                                  }
+                                  className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTextAnnotations((prev) => prev.filter((t) => t.id !== ann.id));
-                        }}
-                        className="ml-1 p-0.5 text-slate-400 hover:text-red-500"
-                        title="Delete"
+                            {/* Selectable & Editable Textarea */}
+                            <textarea
+                              value={ann.text}
+                              onChange={(e) =>
+                                setTextAnnotations((prev) =>
+                                  prev.map((t) => (t.id === ann.id ? { ...t, text: e.target.value } : t))
+                                )
+                              }
+                              className="w-full text-xs font-sans text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 resize-none select-text cursor-text"
+                              rows={3}
+                              placeholder="Enter helpful information or note..."
+                            />
+
+                            <div className="flex items-center justify-between pt-2 text-[10px] text-slate-400">
+                              <span>Drag pin to move</span>
+                              <button
+                                onClick={() =>
+                                  setTextAnnotations((prev) => prev.filter((t) => t.id !== ann.id))
+                                }
+                                className="text-red-500 hover:text-red-600 font-semibold"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* CASE 2: Normal Inline Text Box with Drag Handle */
+                      <div
+                        className="flex items-center bg-white/95 rounded-xl border-2 border-indigo-500 shadow-xl px-2 py-1 space-x-1"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                        {/* Drag Handle */}
+                        <div
+                          onPointerDown={(e) =>
+                            handlePointerDown(e, ann.id, 'text', ann.xPercent, ann.yPercent)
+                          }
+                          className="p-1 cursor-grab active:cursor-grabbing hover:bg-slate-100 rounded text-slate-400 hover:text-slate-700"
+                          title="Drag to reposition text"
+                        >
+                          <GripHorizontal className="w-3.5 h-3.5" />
+                        </div>
+
+                        {/* Editable Text Input */}
+                        <input
+                          type="text"
+                          value={ann.text}
+                          onChange={(e) =>
+                            setTextAnnotations((prev) =>
+                              prev.map((t) =>
+                                t.id === ann.id ? { ...t, text: e.target.value } : t
+                              )
+                            )
+                          }
+                          style={{
+                            fontSize: `${ann.fontSize}px`,
+                            color: ann.color === 'blue' ? '#1e40af' : ann.color === 'red' ? '#dc2626' : '#0f172a',
+                            fontWeight: ann.isBold ? 'bold' : 'normal',
+                          }}
+                          className="bg-transparent outline-none font-sans font-medium min-w-[70px] select-text cursor-text"
+                        />
+
+                        {/* Switch to Help (i) Pin Button */}
+                        <button
+                          onClick={() =>
+                            setTextAnnotations((prev) =>
+                              prev.map((t) =>
+                                t.id === ann.id ? { ...t, isCallout: true, isOpen: true } : t
+                              )
+                            )
+                          }
+                          className="p-1 text-slate-400 hover:text-blue-600 rounded"
+                          title="Convert to Help (i) Pin"
+                        >
+                          <Info className="w-3.5 h-3.5 text-blue-500" />
+                        </button>
+
+                        {/* Font Size Toggle */}
+                        <button
+                          onClick={() => {
+                            setTextAnnotations((prev) =>
+                              prev.map((t) =>
+                                t.id === ann.id
+                                  ? { ...t, fontSize: t.fontSize >= 28 ? 14 : t.fontSize + 4 }
+                                  : t
+                              )
+                            );
+                          }}
+                          className="px-1 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 font-mono"
+                          title="Toggle Font Size"
+                        >
+                          {ann.fontSize}pt
+                        </button>
+
+                        {/* Delete */}
+                        <button
+                          onClick={() =>
+                            setTextAnnotations((prev) => prev.filter((t) => t.id !== ann.id))
+                          }
+                          className="p-1 text-slate-400 hover:text-red-500 rounded"
+                          title="Delete text"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
 
-                {/* Signatures Layer */}
+                {/* Signatures Layer with Drag Handle & Resizing */}
                 {currentPageSigs.map((sig) => (
                   <div
                     key={sig.id}
@@ -612,24 +821,60 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                       top: `${sig.yPercent}%`,
                       width: `${sig.widthPercent}%`,
                     }}
-                    className="absolute z-20 group cursor-move select-none"
+                    className={`absolute z-20 group select-none ${
+                      draggingId === sig.id ? 'opacity-80 scale-105 z-30' : ''
+                    }`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="relative border-2 border-dashed border-indigo-500/70 hover:border-indigo-500 rounded-lg p-1 bg-white/40 backdrop-blur-[1px]">
+                    <div className="relative border-2 border-dashed border-indigo-500/70 hover:border-indigo-500 rounded-xl p-1.5 bg-white/50 backdrop-blur-[2px] shadow-lg">
+                      {/* Top Drag Bar Handle */}
+                      <div
+                        onPointerDown={(e) =>
+                          handlePointerDown(e, sig.id, 'signature', sig.xPercent, sig.yPercent)
+                        }
+                        className="w-full flex items-center justify-center py-0.5 cursor-grab active:cursor-grabbing hover:bg-indigo-50 rounded mb-1 text-indigo-500"
+                        title="Drag signature anywhere"
+                      >
+                        <GripHorizontal className="w-4 h-4" />
+                      </div>
+
+                      {/* Signature Image */}
                       <img
                         src={sig.dataUrl}
                         alt="Signature Stamp"
                         className="w-full h-auto object-contain pointer-events-none"
                       />
+
+                      {/* Delete Signature Button */}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSignatures((prev) => prev.filter((s) => s.id !== sig.id));
-                        }}
+                        onClick={() =>
+                          setSignatures((prev) => prev.filter((s) => s.id !== sig.id))
+                        }
                         className="absolute -top-2 -right-2 p-1 rounded-full bg-red-600 text-white shadow-md hover:bg-red-500"
                         title="Remove signature"
                       >
                         <X className="w-3 h-3" />
+                      </button>
+
+                      {/* Corner Resize Toggle Handle */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSignatures((prev) =>
+                            prev.map((s) =>
+                              s.id === sig.id
+                                ? {
+                                    ...s,
+                                    widthPercent: s.widthPercent >= 45 ? 20 : s.widthPercent + 8,
+                                  }
+                                : s
+                            )
+                          );
+                        }}
+                        className="absolute -bottom-2 -right-2 p-1 rounded-full bg-indigo-600 text-white shadow-md hover:bg-indigo-500 cursor-pointer"
+                        title="Click to scale size"
+                      >
+                        <Maximize2 className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
