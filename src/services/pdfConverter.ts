@@ -1,4 +1,4 @@
-import { PDFDocument, PageSizes, StandardFonts, rgb, degrees } from 'pdf-lib';
+import { PDFDocument, PageSizes, StandardFonts, rgb, degrees, PDFHexString } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
@@ -277,13 +277,87 @@ export async function bakePdfAnnotations(
       else if (ann.color === 'white') textColor = rgb(1, 1, 1);
 
       if (ann.isCallout) {
-        page.drawText(`[i] ${ann.text}`, {
-          x,
-          y,
-          size: ann.fontSize || 14,
-          font: boldFont,
-          color: rgb(0.15, 0.35, 0.85),
+        // Draw an authentic, clean circular Help (i) badge
+        const badgeRadius = 9; // ~18pt diameter
+        const centerX = (ann.xPercent / 100) * width + badgeRadius;
+        const centerY = height - (ann.yPercent / 100) * height - badgeRadius;
+
+        // 1. Draw crisp outer white border ring for high contrast
+        page.drawCircle({
+          x: centerX,
+          y: centerY,
+          size: badgeRadius + 1.5,
+          color: rgb(1, 1, 1),
         });
+
+        // 2. Draw vibrant blue filled circle
+        page.drawCircle({
+          x: centerX,
+          y: centerY,
+          size: badgeRadius,
+          color: rgb(0.145, 0.388, 0.92), // #2563eb royal blue
+        });
+
+        // 3. Draw bold white lowercase "i" centered inside badge
+        const iFontSize = 10;
+        const iWidth = boldFont.widthOfTextAtSize('i', iFontSize);
+        const iHeight = boldFont.heightAtSize(iFontSize);
+        page.drawText('i', {
+          x: centerX - iWidth / 2,
+          y: centerY - iHeight * 0.33,
+          size: iFontSize,
+          font: boldFont,
+          color: rgb(1, 1, 1),
+        });
+
+        // 4. Attach native PDF ISO 32000 interactive Text annotation & Popup annotation
+        // This ensures clicking or hovering the (i) badge in Acrobat, Chrome, Preview, etc.
+        // pops open the note containing the user-selectable text.
+        try {
+          const textAnnotRef = pdfDoc.context.nextRef();
+          const popupAnnotRef = pdfDoc.context.nextRef();
+
+          const rectX1 = Math.max(0, centerX - badgeRadius - 2);
+          const rectY1 = Math.max(0, centerY - badgeRadius - 2);
+          const rectX2 = Math.min(width, centerX + badgeRadius + 2);
+          const rectY2 = Math.min(height, centerY + badgeRadius + 2);
+
+          const popupWidth = Math.min(220, width - 20);
+          const popupHeight = 70;
+          const popupX1 = Math.max(10, Math.min(centerX, width - popupWidth - 10));
+          const popupY1 = Math.max(10, centerY - popupHeight - 10);
+          const popupX2 = popupX1 + popupWidth;
+          const popupY2 = popupY1 + popupHeight;
+
+          const textAnnot = pdfDoc.context.obj({
+            Type: 'Annot',
+            Subtype: 'Text',
+            Rect: [rectX1, rectY1, rectX2, rectY2],
+            Contents: PDFHexString.fromText(ann.text || ''),
+            Name: 'Help',
+            C: [0.145, 0.388, 0.92],
+            F: 4, // Print flag
+            T: PDFHexString.fromText('DocBuilder Information Note'),
+            Popup: popupAnnotRef,
+            Open: false,
+          });
+
+          const popupAnnot = pdfDoc.context.obj({
+            Type: 'Annot',
+            Subtype: 'Popup',
+            Rect: [popupX1, popupY1, popupX2, popupY2],
+            Parent: textAnnotRef,
+            Open: false,
+          });
+
+          pdfDoc.context.assign(textAnnotRef, textAnnot);
+          pdfDoc.context.assign(popupAnnotRef, popupAnnot);
+
+          page.node.addAnnot(textAnnotRef);
+          page.node.addAnnot(popupAnnotRef);
+        } catch (annotErr) {
+          console.warn('Failed to embed interactive PDF annotation:', annotErr);
+        }
       } else {
         page.drawText(ann.text, {
           x,

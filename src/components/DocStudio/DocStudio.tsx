@@ -50,6 +50,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
 
   // Active Tool Mode
   const [activeTool, setActiveTool] = useState<'select' | 'text' | 'info-pin' | 'signature' | 'watermark'>('select');
+  const [copiedPinId, setCopiedPinId] = useState<string | null>(null);
 
   // Dragging State for Text and Signatures
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     startY: number;
     initialXPct: number;
     initialYPct: number;
+    hasMoved: boolean;
   } | null>(null);
 
   // Annotations State
@@ -209,6 +211,49 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
         await renderTask.promise;
         renderTaskRef.current = null;
 
+        // Auto-extract existing standard PDF Text / Help annotations
+        try {
+          const annots = await page.getAnnotations();
+          const textAnnots = annots.filter(
+            (a: any) =>
+              (a.subtype === 'Text' || a.name === 'Help' || a.name === 'Comment') &&
+              (a.contentsObj?.str || a.contents)
+          );
+          if (textAnnots.length > 0) {
+            const view = page.view;
+            const pageWidth = view && view[2] ? view[2] - view[0] : viewport.width;
+            const pageHeight = view && view[3] ? view[3] - view[1] : viewport.height;
+            setTextAnnotations((prev) => {
+              const existingTexts = new Set(prev.map((t) => `${t.page}-${t.text}`));
+              const imported: TextAnnotation[] = [];
+              textAnnots.forEach((a: any, idx: number) => {
+                const textStr = a.contentsObj?.str || a.contents || '';
+                const key = `${currentPage}-${textStr}`;
+                if (!existingTexts.has(key)) {
+                  existingTexts.add(key);
+                  const rect = a.rect || [0, 0, 20, 20];
+                  const xPct = Math.max(0, Math.min(94, (rect[0] / pageWidth) * 100));
+                  const yPct = Math.max(0, Math.min(94, ((pageHeight - rect[3]) / pageHeight) * 100));
+                  imported.push({
+                    id: `imported-pin-${currentPage}-${idx}-${Date.now()}`,
+                    page: currentPage,
+                    xPercent: xPct,
+                    yPercent: yPct,
+                    text: textStr,
+                    fontSize: 14,
+                    color: 'blue',
+                    isCallout: true,
+                    isOpen: false,
+                  });
+                }
+              });
+              return imported.length > 0 ? [...prev, ...imported] : prev;
+            });
+          }
+        } catch {
+          // ignore annotation extraction error
+        }
+
         if (!isCancelled) {
           setIsLoadingPage(false);
         }
@@ -234,6 +279,15 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     };
   }, [file, currentPage, pageRotations[currentPage], deletedPages]);
 
+  // Copy text helper for Help Pins
+  const handleCopyPinText = (id: string, text: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedPinId(id);
+    sounds.playSuccess();
+    setTimeout(() => setCopiedPinId(null), 2000);
+  };
+
   // DRAG & DROP POINTER HANDLERS
   const handlePointerDown = (
     e: React.PointerEvent,
@@ -243,6 +297,9 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     initialYPct: number
   ) => {
     e.stopPropagation();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
     setDraggingId(id);
     dragRef.current = {
       id,
@@ -251,14 +308,18 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       startY: e.clientY,
       initialXPct,
       initialYPct,
+      hasMoved: false,
     };
   };
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragRef.current || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
     const dx = e.clientX - dragRef.current.startX;
     const dy = e.clientY - dragRef.current.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      dragRef.current.hasMoved = true;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
     const dxPct = (dx / rect.width) * 100;
     const dyPct = (dy / rect.height) * 100;
 
@@ -276,7 +337,10 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     }
   }, []);
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
     setDraggingId(null);
     dragRef.current = null;
   }, []);
@@ -637,43 +701,61 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                   >
                     {/* CASE 1: Help (i) Pin Mode */}
                     {ann.isCallout ? (
-                      <div className="relative">
-                        {/* The Circular (i) Pin Button with drag handle */}
+                      <div className="relative group/pin">
+                        {/* Authentic Circular Help (i) Badge */}
                         <div
-                          className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-500 text-white rounded-full p-1 shadow-xl ring-2 ring-white cursor-pointer transition-transform hover:scale-110 active:scale-95"
+                          onPointerDown={(e) =>
+                            handlePointerDown(e, ann.id, 'text', ann.xPercent, ann.yPercent)
+                          }
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (dragRef.current?.hasMoved) return;
                             setTextAnnotations((prev) =>
                               prev.map((t) => (t.id === ann.id ? { ...t, isOpen: !t.isOpen } : t))
                             );
                             sounds.playTick();
                           }}
+                          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center cursor-pointer transition-all select-none shadow-lg active:scale-95 ${
+                            ann.isOpen
+                              ? 'bg-blue-600 text-white ring-4 ring-blue-400/50 scale-105 shadow-blue-500/50'
+                              : 'bg-gradient-to-tr from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white ring-2 ring-white hover:scale-110 shadow-blue-600/40'
+                          }`}
+                          title={ann.isOpen ? 'Click to close note' : 'Click to show note (User Selectable) • Drag to move'}
                         >
-                          {/* Drag handle */}
-                          <div
-                            onPointerDown={(e) =>
-                              handlePointerDown(e, ann.id, 'text', ann.xPercent, ann.yPercent)
-                            }
-                            className="p-1 cursor-grab active:cursor-grabbing hover:bg-blue-700 rounded-full"
-                            title="Drag pin anywhere"
-                          >
-                            <GripHorizontal className="w-3 h-3 text-blue-200" />
-                          </div>
-                          <Info className="w-4 h-4 pr-0.5" />
+                          <Info className="w-4 h-4 pointer-events-none stroke-[2.5]" />
                         </div>
 
-                        {/* Expandable Popover Card with User-Selectable Text */}
+                        {/* Expandable Popover Card with User-Selectable & Copyable Text */}
                         {ann.isOpen && (
                           <div
-                            className="absolute top-9 left-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border border-blue-200 dark:border-blue-800 rounded-2xl p-3 shadow-2xl min-w-[220px] max-w-xs animate-in zoom-in-95 duration-150"
+                            className="absolute top-9 left-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-2 border-blue-500/80 rounded-2xl p-3 shadow-2xl min-w-[260px] max-w-sm animate-in zoom-in-95 duration-150"
                             onClick={(e) => e.stopPropagation()}
+                            onPointerDown={(e) => e.stopPropagation()}
                           >
                             <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 dark:border-slate-800 mb-2">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center space-x-1">
-                                <Info className="w-3 h-3" />
+                                <Info className="w-3.5 h-3.5" />
                                 <span>Info Note (Selectable)</span>
                               </span>
                               <div className="flex items-center space-x-1">
+                                {/* Copy Button */}
+                                <button
+                                  onClick={(e) => handleCopyPinText(ann.id, ann.text, e)}
+                                  className="px-2 py-0.5 rounded-lg text-[10px] font-semibold flex items-center space-x-1 bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/60 transition-colors"
+                                  title="Copy text to clipboard"
+                                >
+                                  {copiedPinId === ann.id ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-500" />
+                                      <span className="text-emerald-500 font-bold">Copied!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Share2 className="w-3 h-3" />
+                                      <span>Copy</span>
+                                    </>
+                                  )}
+                                </button>
                                 {/* Switch back to normal text */}
                                 <button
                                   onClick={() =>
@@ -696,6 +778,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                                     )
                                   }
                                   className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                                  title="Close Note"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
@@ -710,9 +793,10 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                                   prev.map((t) => (t.id === ann.id ? { ...t, text: e.target.value } : t))
                                 )
                               }
-                              className="w-full text-xs font-sans text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 resize-none select-text cursor-text"
+                              className="w-full text-xs font-sans text-slate-900 dark:text-slate-100 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-blue-500 resize-none select-text cursor-text leading-relaxed selection:bg-blue-200 dark:selection:bg-blue-800"
                               rows={3}
                               placeholder="Enter helpful information or note..."
+                              autoFocus
                             />
 
                             <div className="flex items-center justify-between pt-2 text-[10px] text-slate-400">
