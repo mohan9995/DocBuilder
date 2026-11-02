@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
-// @ts-ignore
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import {
   Type,
   PenTool,
@@ -17,18 +15,20 @@ import {
   Loader2,
   CheckCircle2,
   X,
-  Move,
+  AlertCircle,
+  FileText,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { TextAnnotation, SignatureAnnotation, WatermarkConfig } from '../../types';
 import { SignatureModal } from './SignatureModal';
 import { bakePdfAnnotations } from '../../services/pdfConverter';
+import { loadImage } from '../../services/imageConverter';
 import { saveFileNatively, shareFile } from '../../services/nativeShare';
 import { sounds } from '../../services/soundService';
 
+// Ensure PDF.js uses public static worker
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    pdfjsWorker ||
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 }
 
 interface DocStudioProps {
@@ -42,9 +42,14 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
   const [isSignatureModalOpen, setIsSignatureModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Active Tool Mode
   const [activeTool, setActiveTool] = useState<'select' | 'text' | 'signature' | 'watermark'>('select');
+
+  // Selected annotation for styling
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
 
   // Annotations State
   const [textAnnotations, setTextAnnotations] = useState<TextAnnotation[]>([]);
@@ -62,90 +67,195 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const renderTaskRef = useRef<any>(null);
 
-  // Load and render PDF page
+  // Sync initialFile if it changes from parent
+  useEffect(() => {
+    if (initialFile) {
+      setFile(initialFile);
+      setCurrentPage(1);
+      setDeletedPages([]);
+      setPageRotations({});
+      setTextAnnotations([]);
+      setSignatures([]);
+      setErrorMessage(null);
+    }
+  }, [initialFile]);
+
+  // Load and render document page (supports both PDF and Images)
   useEffect(() => {
     if (!file) return;
 
     let isCancelled = false;
 
-    async function renderPage() {
+    async function renderDocument() {
       if (!file) return;
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      if (isCancelled) return;
+      setIsLoadingPage(true);
+      setErrorMessage(null);
 
-      setTotalPages(pdf.numPages);
-
-      // Skip if current page is marked deleted
-      if (deletedPages.includes(currentPage)) {
-        // Jump to next available
-        const nextAvail = Array.from({ length: pdf.numPages }, (_, i) => i + 1).find(
-          (p) => !deletedPages.includes(p)
-        );
-        if (nextAvail) setCurrentPage(nextAvail);
-        return;
+      // Cancel any ongoing PDF.js render task
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {
+          // ignore
+        }
+        renderTaskRef.current = null;
       }
 
-      const page = await pdf.getPage(currentPage);
-      if (isCancelled) return;
+      try {
+        const isImage = file.type.startsWith('image/');
 
-      const viewport = page.getViewport({
-        scale: 1.5,
-        rotation: pageRotations[currentPage] || 0,
-      });
+        if (isImage) {
+          // Render Image Document directly to canvas
+          const img = await loadImage(file);
+          if (isCancelled) return;
 
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+          setTotalPages(1);
 
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
 
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-      }).promise;
+          const rotation = pageRotations[1] || 0;
+          const isSideways = rotation === 90 || rotation === 270;
+
+          const targetWidth = isSideways ? img.naturalHeight : img.naturalWidth;
+          const targetHeight = isSideways ? img.naturalWidth : img.naturalHeight;
+
+          // Scale to comfortable high-definition viewport
+          const maxDim = 1200;
+          const scale = Math.min(1, maxDim / Math.max(targetWidth, targetHeight));
+
+          canvas.width = Math.round(targetWidth * scale);
+          canvas.height = Math.round(targetHeight * scale);
+
+          ctx.save();
+          ctx.translate(canvas.width / 2, canvas.height / 2);
+          ctx.rotate((rotation * Math.PI) / 180);
+          if (isSideways) {
+            ctx.drawImage(img, -canvas.height / 2, -canvas.width / 2, canvas.height, canvas.width);
+          } else {
+            ctx.drawImage(img, -canvas.width / 2, -canvas.height / 2, canvas.width, canvas.height);
+          }
+          ctx.restore();
+
+          setIsLoadingPage(false);
+          return;
+        }
+
+        // Render PDF Document using PDF.js
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(arrayBuffer),
+          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+          cMapPacked: true,
+        });
+
+        const pdf = await loadingTask.promise;
+        if (isCancelled) return;
+
+        setTotalPages(pdf.numPages);
+
+        if (deletedPages.includes(currentPage)) {
+          const nextAvail = Array.from({ length: pdf.numPages }, (_, i) => i + 1).find(
+            (p) => !deletedPages.includes(p)
+          );
+          if (nextAvail) setCurrentPage(nextAvail);
+          setIsLoadingPage(false);
+          return;
+        }
+
+        const page = await pdf.getPage(currentPage);
+        if (isCancelled) return;
+
+        const currentRot = (page.rotate + (pageRotations[currentPage] || 0)) % 360;
+
+        // Render at crisp 1.5x scale
+        const viewport = page.getViewport({
+          scale: 1.5,
+          rotation: currentRot,
+        });
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const renderTask = page.render({
+          canvasContext: ctx,
+          viewport,
+        });
+        renderTaskRef.current = renderTask;
+
+        await renderTask.promise;
+        renderTaskRef.current = null;
+
+        if (!isCancelled) {
+          setIsLoadingPage(false);
+        }
+      } catch (err: any) {
+        if (err?.name === 'RenderingCancelledException') {
+          // Expected when rapid page switching or React StrictMode re-mounts
+          return;
+        }
+        console.error('Failed to render document page:', err);
+        setErrorMessage(err?.message || 'Failed to render document page. Please try re-uploading.');
+        setIsLoadingPage(false);
+      }
     }
 
-    renderPage();
+    renderDocument();
 
     return () => {
       isCancelled = true;
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch {}
+      }
     };
   }, [file, currentPage, pageRotations[currentPage], deletedPages]);
 
-  // Handle click on PDF stage to insert text
+  // Handle click on document canvas to insert text
   const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool !== 'text' || !containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const xPercent = Math.max(0, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100));
-    const yPercent = Math.max(0, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100));
+    const xPercent = Math.max(0, Math.min(92, ((e.clientX - rect.left) / rect.width) * 100));
+    const yPercent = Math.max(0, Math.min(92, ((e.clientY - rect.top) / rect.height) * 100));
 
     const newAnnotation: TextAnnotation = {
       id: `text-${Date.now()}`,
       page: currentPage,
       xPercent,
       yPercent,
-      text: 'Click to edit text',
+      text: 'Click to type',
       fontSize: 16,
       color: 'black',
+      isBold: false,
     };
 
     setTextAnnotations((prev) => [...prev, newAnnotation]);
+    setSelectedTextId(newAnnotation.id);
     setActiveTool('select');
     sounds.playTick();
   };
 
-  // Add signature
+  // Add signature stamp
   const handleApplySignature = (dataUrl: string) => {
     const newSig: SignatureAnnotation = {
       id: `sig-${Date.now()}`,
       page: currentPage,
       xPercent: 40,
-      yPercent: 75,
+      yPercent: 70,
       widthPercent: 28,
       heightPercent: 12,
       dataUrl,
@@ -192,8 +302,8 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       setExportSuccess(true);
       sounds.playSuccess();
       setTimeout(() => setExportSuccess(false), 4000);
-    } catch (err) {
-      alert('Failed to export edited document.');
+    } catch (err: any) {
+      alert(`Export failed: ${err?.message || 'Check document format.'}`);
     } finally {
       setIsExporting(false);
     }
@@ -207,7 +317,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       {/* Studio Top Control Strip */}
       <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
         {/* Left: Tools */}
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Add Text Tool */}
           <button
             onClick={() => {
@@ -216,7 +326,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
             }}
             className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
               activeTool === 'text'
-                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
             }`}
           >
@@ -246,7 +356,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
-            <span>{watermark.enabled ? 'Watermark: ON' : 'Watermark'}</span>
+            <span>{watermark.enabled ? `Watermark: ${watermark.text}` : 'Watermark'}</span>
           </button>
 
           <div className="h-5 w-px bg-slate-800 hidden sm:block" />
@@ -270,41 +380,50 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           </button>
         </div>
 
-        {/* Right: Export CTA */}
+        {/* Right: Export & File Open */}
         <div className="flex items-center space-x-2">
           {file ? (
-            <button
-              onClick={handleExportPdf}
-              disabled={isExporting}
-              className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md transition-all active:scale-95 ${
-                exportSuccess
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-indigo-600/30'
-              }`}
-            >
-              {isExporting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Baking Edits...</span>
-                </>
-              ) : exportSuccess ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Saved & Exported!</span>
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  <span>Export Final PDF</span>
-                </>
-              )}
-            </button>
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+              >
+                Change File
+              </button>
+
+              <button
+                onClick={handleExportPdf}
+                disabled={isExporting}
+                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md transition-all active:scale-95 ${
+                  exportSuccess
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-indigo-600/30'
+                }`}
+              >
+                {isExporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Baking PDF...</span>
+                  </>
+                ) : exportSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Saved & Exported!</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    <span>Export Final PDF</span>
+                  </>
+                )}
+              </button>
+            </>
           ) : (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white"
+              className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20"
             >
-              Open PDF
+              Open Document
             </button>
           )}
         </div>
@@ -313,7 +432,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,image/*,.heic,.heif"
         className="hidden"
         onChange={(e) => {
           if (e.target.files && e.target.files[0]) {
@@ -323,13 +442,30 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
             setPageRotations({});
             setTextAnnotations([]);
             setSignatures([]);
+            setErrorMessage(null);
             e.target.value = '';
           }
         }}
       />
 
       {/* Main Interactive Document Stage */}
-      <div className="relative bg-slate-950/80 border border-slate-800 rounded-3xl p-4 sm:p-8 flex flex-col items-center justify-center min-h-[500px] overflow-hidden shadow-2xl">
+      <div
+        className="relative bg-slate-950/80 border border-slate-800 rounded-3xl p-4 sm:p-8 flex flex-col items-center justify-center min-h-[500px] overflow-hidden shadow-2xl"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            sounds.playDrop();
+            setFile(e.dataTransfer.files[0]);
+            setCurrentPage(1);
+            setDeletedPages([]);
+            setPageRotations({});
+            setTextAnnotations([]);
+            setSignatures([]);
+            setErrorMessage(null);
+          }
+        }}
+      >
         {!file ? (
           <div
             onClick={() => fileInputRef.current?.click()}
@@ -339,13 +475,13 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
               <Upload className="w-8 h-8" />
             </div>
             <h4 className="text-white font-bold text-base mb-1">
-              Select a PDF to Edit & Sign
+              Select a Document or Image to Edit & Sign
             </h4>
             <p className="text-xs text-slate-400 mb-4">
               Add text annotations, draw official digital signatures, and customize pages
             </p>
             <span className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md">
-              Browse Files
+              Browse Files (PDF or Image)
             </span>
           </div>
         ) : (
@@ -353,123 +489,178 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
             {/* Active Prompt Tool Banner */}
             {activeTool === 'text' && (
               <div className="mb-3 px-3 py-1.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-xs font-medium animate-pulse">
-                Click anywhere on the document page to drop text ✏️
+                Click anywhere on the document to drop a text box ✏️
+              </div>
+            )}
+
+            {/* Error Message if rendering fails */}
+            {errorMessage && (
+              <div className="mb-4 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-300 text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{errorMessage}</span>
               </div>
             )}
 
             {/* Document Rendered Canvas & Interactive Annotation Layer */}
-            <div
-              ref={containerRef}
-              onClick={handleStageClick}
-              className={`relative shadow-2xl rounded-xl overflow-hidden bg-white max-w-full cursor-${
-                activeTool === 'text' ? 'crosshair' : 'default'
-              }`}
-            >
-              {/* PDF Canvas */}
-              <canvas ref={canvasRef} className="block max-w-full h-auto" />
-
-              {/* Watermark Overlay Preview */}
-              {watermark.enabled && (
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
-                  <span
-                    className="text-4xl sm:text-6xl font-black uppercase text-slate-900/15 select-none -rotate-45 tracking-widest"
-                  >
-                    {watermark.text}
-                  </span>
+            <div className="relative max-w-full flex items-center justify-center">
+              {isLoadingPage && (
+                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm rounded-xl flex items-center justify-center z-30">
+                  <div className="flex flex-col items-center space-y-2 text-white text-xs font-semibold">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+                    <span>Rendering page...</span>
+                  </div>
                 </div>
               )}
 
-              {/* Text Annotations Layer */}
-              {currentPageTexts.map((ann) => (
-                <div
-                  key={ann.id}
-                  style={{
-                    left: `${ann.xPercent}%`,
-                    top: `${ann.yPercent}%`,
-                  }}
-                  className="absolute z-20 group"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex items-center bg-white/95 rounded-lg border border-indigo-400 shadow-lg px-2 py-1">
-                    <input
-                      type="text"
-                      value={ann.text}
-                      onChange={(e) =>
-                        setTextAnnotations((prev) =>
-                          prev.map((t) =>
-                            t.id === ann.id ? { ...t, text: e.target.value } : t
-                          )
-                        )
-                      }
-                      style={{ fontSize: `${ann.fontSize}px` }}
-                      className="bg-transparent text-slate-900 outline-none font-sans font-medium min-w-[80px]"
-                    />
-                    <button
-                      onClick={() =>
-                        setTextAnnotations((prev) => prev.filter((t) => t.id !== ann.id))
-                      }
-                      className="ml-1 p-0.5 text-slate-400 hover:text-red-500"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+              <div
+                ref={containerRef}
+                onClick={handleStageClick}
+                className={`relative shadow-2xl rounded-xl overflow-hidden bg-white border border-slate-700/60 max-w-full cursor-${
+                  activeTool === 'text' ? 'crosshair' : 'default'
+                }`}
+              >
+                {/* PDF or Image Canvas */}
+                <canvas
+                  ref={canvasRef}
+                  className="block max-w-full h-auto mx-auto"
+                  style={{ display: 'block' }}
+                />
 
-              {/* Signatures Layer */}
-              {currentPageSigs.map((sig) => (
-                <div
-                  key={sig.id}
-                  style={{
-                    left: `${sig.xPercent}%`,
-                    top: `${sig.yPercent}%`,
-                    width: `${sig.widthPercent}%`,
-                  }}
-                  className="absolute z-20 group cursor-move select-none"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="relative border-2 border-dashed border-indigo-500/50 hover:border-indigo-500 rounded-lg p-1 bg-white/40 backdrop-blur-[1px]">
-                    <img
-                      src={sig.dataUrl}
-                      alt="Signature Stamp"
-                      className="w-full h-auto object-contain pointer-events-none"
-                    />
-                    <button
-                      onClick={() =>
-                        setSignatures((prev) => prev.filter((s) => s.id !== sig.id))
-                      }
-                      className="absolute -top-2 -right-2 p-1 rounded-full bg-red-600 text-white shadow-md hover:bg-red-500"
-                      title="Remove signature"
+                {/* Watermark Overlay Preview */}
+                {watermark.enabled && (
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+                    <span
+                      className="text-4xl sm:text-6xl font-black uppercase text-slate-900/15 select-none -rotate-45 tracking-widest text-center px-4"
                     >
-                      <X className="w-3 h-3" />
-                    </button>
+                      {watermark.text}
+                    </span>
                   </div>
-                </div>
-              ))}
+                )}
+
+                {/* Text Annotations Layer */}
+                {currentPageTexts.map((ann) => (
+                  <div
+                    key={ann.id}
+                    style={{
+                      left: `${ann.xPercent}%`,
+                      top: `${ann.yPercent}%`,
+                    }}
+                    className="absolute z-20 group"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedTextId(ann.id);
+                    }}
+                  >
+                    <div className="flex items-center bg-white/95 rounded-lg border-2 border-indigo-500 shadow-xl px-2 py-1">
+                      <input
+                        type="text"
+                        value={ann.text}
+                        onChange={(e) =>
+                          setTextAnnotations((prev) =>
+                            prev.map((t) =>
+                              t.id === ann.id ? { ...t, text: e.target.value } : t
+                            )
+                          )
+                        }
+                        style={{
+                          fontSize: `${ann.fontSize}px`,
+                          color: ann.color === 'blue' ? '#1e40af' : ann.color === 'red' ? '#dc2626' : '#0f172a',
+                          fontWeight: ann.isBold ? 'bold' : 'normal',
+                        }}
+                        className="bg-transparent outline-none font-sans font-medium min-w-[80px]"
+                        autoFocus
+                      />
+
+                      {/* Font Size & Delete */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTextAnnotations((prev) =>
+                            prev.map((t) =>
+                              t.id === ann.id
+                                ? { ...t, fontSize: t.fontSize >= 28 ? 14 : t.fontSize + 4 }
+                                : t
+                            )
+                          );
+                        }}
+                        className="ml-1 px-1 py-0.5 rounded text-[10px] bg-slate-100 text-slate-700 hover:bg-slate-200 font-mono"
+                        title="Increase size"
+                      >
+                        {ann.fontSize}pt
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTextAnnotations((prev) => prev.filter((t) => t.id !== ann.id));
+                        }}
+                        className="ml-1 p-0.5 text-slate-400 hover:text-red-500"
+                        title="Delete"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Signatures Layer */}
+                {currentPageSigs.map((sig) => (
+                  <div
+                    key={sig.id}
+                    style={{
+                      left: `${sig.xPercent}%`,
+                      top: `${sig.yPercent}%`,
+                      width: `${sig.widthPercent}%`,
+                    }}
+                    className="absolute z-20 group cursor-move select-none"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="relative border-2 border-dashed border-indigo-500/70 hover:border-indigo-500 rounded-lg p-1 bg-white/40 backdrop-blur-[1px]">
+                      <img
+                        src={sig.dataUrl}
+                        alt="Signature Stamp"
+                        className="w-full h-auto object-contain pointer-events-none"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSignatures((prev) => prev.filter((s) => s.id !== sig.id));
+                        }}
+                        className="absolute -top-2 -right-2 p-1 rounded-full bg-red-600 text-white shadow-md hover:bg-red-500"
+                        title="Remove signature"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Page Navigation Strip */}
-            <div className="mt-4 flex items-center space-x-3 bg-slate-900/90 px-4 py-2 rounded-2xl border border-slate-800 shadow-md">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30"
-              >
-                <ChevronLeft className="w-5 h-5" />
-              </button>
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center space-x-3 bg-slate-900/90 px-4 py-2 rounded-2xl border border-slate-800 shadow-md">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
 
-              <span className="text-xs font-mono font-bold text-slate-200">
-                Page {currentPage} of {totalPages}
-              </span>
+                <span className="text-xs font-mono font-bold text-slate-200">
+                  Page {currentPage} of {totalPages}
+                </span>
 
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30"
-              >
-                <ChevronRight className="w-5 h-5" />
-              </button>
-            </div>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white disabled:opacity-30"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

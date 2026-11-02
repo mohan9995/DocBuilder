@@ -5,9 +5,9 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
 import type { ConversionOptions, TargetFormat, TextAnnotation, SignatureAnnotation, WatermarkConfig } from '../types';
 import { loadImage } from './imageConverter';
 
-// Configure PDF.js worker
+// Configure PDF.js worker using public static asset
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker || 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 }
 
 /**
@@ -225,8 +225,26 @@ export async function bakePdfAnnotations(
     deletedPages?: number[]; // pageNumbers (1-based)
   }
 ): Promise<{ blob: Blob; fileName: string }> {
-  const fileBytes = await file.arrayBuffer();
-  const pdfDoc = await PDFDocument.load(fileBytes);
+  let pdfDoc: PDFDocument;
+
+  if (file.type.startsWith('image/')) {
+    pdfDoc = await PDFDocument.create();
+    const img = await loadImage(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+    const bytes = await fetch(dataUrl).then((r) => r.arrayBuffer());
+    const embedded = await pdfDoc.embedPng(bytes);
+    const page = pdfDoc.addPage([img.naturalWidth, img.naturalHeight]);
+    page.drawImage(embedded, { x: 0, y: 0, width: img.naturalWidth, height: img.naturalHeight });
+  } else {
+    const fileBytes = await file.arrayBuffer();
+    pdfDoc = await PDFDocument.load(fileBytes);
+  }
+
   const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 

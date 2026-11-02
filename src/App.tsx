@@ -319,7 +319,7 @@ export function App() {
           </div>
         ) : activeView === 'doc-studio' ? (
           <div className="w-full max-w-4xl mx-auto animate-in fade-in duration-300">
-            <DocStudio initialFile={activeItem?.file && activeItem.file.type === 'application/pdf' ? activeItem.file : null} />
+            <DocStudio initialFile={activeItem?.file || null} />
           </div>
         ) : (
           <div className="w-full max-w-2xl mx-auto bg-slate-900/90 backdrop-blur-2xl rounded-3xl p-6 border border-slate-800 shadow-2xl">
