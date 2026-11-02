@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>OmniConvert</string>
+        <string>DocBuilder</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -46,10 +46,10 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>OmniConvert needs camera access to capture documents and images for conversion.</string>
+	<string>DocBuilder needs camera access to capture documents and images for conversion.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>OmniConvert needs photo library access to select and convert your photos.</string>
+	<string>DocBuilder needs photo library access to select and convert your photos.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>OmniConvert saves converted images and documents to your photos.</string>
+	<string>DocBuilder saves converted images and documents to your photos.</string>
 </dict>
 </plist>

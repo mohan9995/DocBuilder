@@ -54,7 +54,7 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
             ⚡
           </div>
           <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-white px-1 tracking-tight hidden sm:inline">
-            OmniConvert
+            DocBuilder
           </span>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-1" />

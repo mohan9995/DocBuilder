@@ -130,7 +130,7 @@ export const PlatformGuideModal: React.FC<PlatformGuideModalProps> = ({ isOpen, 
                 </h4>
                 <ul className="list-disc list-inside space-y-1 text-slate-500 dark:text-slate-400 text-xs">
                   <li>Select your Apple Developer Team in <span className="font-semibold text-slate-700 dark:text-slate-200">Signing & Capabilities</span>.</li>
-                  <li>Set bundle identifier (e.g. <span className="font-mono">com.omniconvert.app</span>).</li>
+                  <li>Set bundle identifier (e.g. <span className="font-mono">com.docbuilder.app</span>).</li>
                   <li>Click <span className="font-semibold text-slate-700 dark:text-slate-200">Product &gt; Archive</span> and upload to App Store Connect!</li>
                 </ul>
               </div>

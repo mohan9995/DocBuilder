@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">OmniConvert</string>
-    <string name="title_activity_main">OmniConvert</string>
-    <string name="package_name">com.omniconvert.app</string>
-    <string name="custom_url_scheme">com.omniconvert.app</string>
+    <string name="app_name">DocBuilder</string>
+    <string name="title_activity_main">DocBuilder</string>
+    <string name="package_name">com.docbuilder.app</string>
+    <string name="custom_url_scheme">com.docbuilder.app</string>
 </resources>

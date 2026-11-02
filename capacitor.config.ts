@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.omniconvert.app',
-  appName: 'OmniConvert',
+  appId: 'com.docbuilder.app',
+  appName: 'DocBuilder',
   webDir: 'dist',
   server: {
     androidScheme: 'https'
