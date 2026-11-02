@@ -1,19 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Header } from './components/Header';
-import { FileDropzone } from './components/FileDropzone';
-import { FileList } from './components/FileList';
-import { ConversionToolbar } from './components/ConversionToolbar';
-import { OptionsModal } from './components/OptionsModal';
+import { RadialDial } from './components/RadialDial';
+import { AmbientBackground, ThemePreset } from './components/AmbientBackground';
+import { FloatingHeader } from './components/FloatingHeader';
+import { BatchDock } from './components/BatchDock';
+import { QuickSettingsDrawer } from './components/QuickSettingsDrawer';
 import { PdfStudioTab } from './components/PdfStudioTab';
 import { PlatformGuideModal } from './components/PlatformGuideModal';
 import { FileItem, TargetFormat, ConversionOptions } from './types';
 import { executeConversion, detectFormat } from './services/conversionEngine';
-import { imagesToPdf } from './services/pdfConverter';
 import { downloadAllAsZip } from './services/zipService';
-import { saveFileNatively } from './services/nativeShare';
-import { Shield, Zap, Lock, Smartphone } from 'lucide-react';
+import { sounds } from './services/soundService';
 
-const DEFAULT_OPTIONS: ConversionOptions = {
+const INITIAL_OPTIONS: ConversionOptions = {
   quality: 0.9,
   maintainAspectRatio: true,
   pdfPageSize: 'fit',
@@ -23,43 +21,54 @@ const DEFAULT_OPTIONS: ConversionOptions = {
 };
 
 export function App() {
+  const [theme, setTheme] = useState<ThemePreset>('tangerine');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [activeView, setActiveView] = useState<'dial' | 'pdf-studio'>('dial');
   const [items, setItems] = useState<FileItem[]>([]);
-  const [globalTarget, setGlobalTarget] = useState<TargetFormat>('webp');
-  const [isConvertingAll, setIsConvertingAll] = useState(false);
-  const [activeTab, setActiveTab] = useState<'converter' | 'pdf-studio'>('converter');
-  const [selectedItemForOptions, setSelectedItemForOptions] = useState<FileItem | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [options, setOptions] = useState<ConversionOptions>(INITIAL_OPTIONS);
 
-  // Dark mode setup
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('omni_theme');
-      if (saved) return saved === 'dark';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
-  });
-
+  // Sync dark class for themes
   useEffect(() => {
-    if (darkMode) {
+    if (theme === 'midnight' || theme === 'aurora') {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('omni_theme', 'dark');
-    } else {
+    } else if (theme === 'frost') {
       document.documentElement.classList.remove('dark');
-      localStorage.setItem('omni_theme', 'light');
+    } else {
+      // Tangerine can be dynamic or default dark text
+      document.documentElement.classList.remove('dark');
     }
-  }, [darkMode]);
+  }, [theme]);
+
+  // Support clipboard paste (Cmd+V / Ctrl+V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (!e.clipboardData) return;
+      const itemsList = e.clipboardData.items;
+      const files: File[] = [];
+      for (let i = 0; i < itemsList.length; i++) {
+        if (itemsList[i].kind === 'file') {
+          const file = itemsList[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        sounds.playDrop();
+        handleFilesAdded(files);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
   const handleFilesAdded = (files: File[]) => {
     const newItems: FileItem[] = files.map((file) => {
       const detected = detectFormat(file);
-      // Smart default target
-      let defaultTarget: TargetFormat = globalTarget;
-      if (detected === 'pdf') {
-        defaultTarget = 'jpeg';
-      } else if (detected === 'webp' && globalTarget === 'webp') {
-        defaultTarget = 'png';
-      }
+      const defaultTarget: TargetFormat = detected === 'pdf' ? 'jpeg' : 'webp';
 
       return {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -71,59 +80,49 @@ export function App() {
         targetFormat: defaultTarget,
         status: 'idle',
         progress: 0,
-        options: { ...DEFAULT_OPTIONS },
+        options: { ...options },
       };
     });
 
     setItems((prev) => [...prev, ...newItems]);
+    if (!activeItemId || newItems.length > 0) {
+      setActiveItemId(newItems[0].id);
+    }
   };
 
-  const handleUpdateTarget = (id: string, targetFormat: TargetFormat) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, targetFormat } : item))
-    );
-  };
+  const activeItem = items.find((i) => i.id === activeItemId) || (items.length > 0 ? items[0] : null);
 
-  const handleSetGlobalTarget = (format: TargetFormat) => {
-    setGlobalTarget(format);
-    setItems((prev) =>
-      prev.map((item) => {
-        // Keep PDF to image default if source is PDF and target was document
-        return { ...item, targetFormat: format };
-      })
-    );
-  };
+  const handleConvertActive = async (format: TargetFormat) => {
+    if (!activeItem) return;
 
-  const handleRemoveItem = (id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-  };
+    setIsConverting(true);
 
-  const handleClearAll = () => {
-    setItems([]);
-  };
+    // Update active item target
+    const currentItem: FileItem = {
+      ...activeItem,
+      targetFormat: format,
+      options: { ...options },
+      status: 'converting',
+      progress: 15,
+      error: undefined,
+    };
 
-  const handleConvertSingle = async (id: string) => {
-    const targetItem = items.find((i) => i.id === id);
-    if (!targetItem) return;
-
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: 'converting', progress: 10, error: undefined } : i))
-    );
+    setItems((prev) => prev.map((item) => (item.id === currentItem.id ? currentItem : item)));
 
     try {
-      const result = await executeConversion(targetItem, (progress) => {
+      const result = await executeConversion(currentItem, (progress) => {
         setItems((prev) =>
-          prev.map((i) => (i.id === id ? { ...i, progress } : i))
+          prev.map((item) => (item.id === currentItem.id ? { ...item, progress } : item))
         );
       });
 
       const resultUrl = URL.createObjectURL(result.blob);
 
       setItems((prev) =>
-        prev.map((i) =>
-          i.id === id
+        prev.map((item) =>
+          item.id === currentItem.id
             ? {
-                ...i,
+                ...item,
                 status: 'completed',
                 progress: 100,
                 resultBlob: result.blob,
@@ -131,188 +130,150 @@ export function App() {
                 resultFileName: result.fileName,
                 resultSize: result.size,
               }
-            : i
+            : item
         )
       );
+
+      sounds.playSuccess();
     } catch (err: any) {
       setItems((prev) =>
-        prev.map((i) =>
-          i.id === id
-            ? {
-                ...i,
-                status: 'error',
-                error: err?.message || 'Conversion failed',
-              }
-            : i
+        prev.map((item) =>
+          item.id === currentItem.id
+            ? { ...item, status: 'error', error: err?.message || 'Conversion failed' }
+            : item
         )
       );
+    } finally {
+      setIsConverting(false);
     }
   };
 
-  const handleConvertAll = async () => {
-    const pendingItems = items.filter((item) => item.status !== 'completed');
-    if (pendingItems.length === 0) return;
+  const handleConvertAll = async (format: TargetFormat) => {
+    if (items.length === 0) return;
+    setIsConverting(true);
 
-    setIsConvertingAll(true);
+    for (const item of items) {
+      if (item.status === 'completed') continue;
 
-    for (const item of pendingItems) {
-      await handleConvertSingle(item.id);
+      const updatedItem: FileItem = {
+        ...item,
+        targetFormat: format,
+        options: { ...options },
+        status: 'converting',
+        progress: 20,
+      };
+
+      setItems((prev) => prev.map((i) => (i.id === item.id ? updatedItem : i)));
+
+      try {
+        const result = await executeConversion(updatedItem, (progress) => {
+          setItems((prev) =>
+            prev.map((i) => (i.id === item.id ? { ...i, progress } : i))
+          );
+        });
+
+        const resultUrl = URL.createObjectURL(result.blob);
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === item.id
+              ? {
+                  ...i,
+                  status: 'completed',
+                  progress: 100,
+                  resultBlob: result.blob,
+                  resultUrl,
+                  resultFileName: result.fileName,
+                  resultSize: result.size,
+                }
+              : i
+          )
+        );
+      } catch (e: any) {
+        setItems((prev) =>
+          prev.map((i) =>
+            i.id === item.id ? { ...i, status: 'error', error: e?.message } : i
+          )
+        );
+      }
     }
 
-    setIsConvertingAll(false);
-  };
-
-  const handleCombineToPdf = async () => {
-    const imageItems = items.filter((item) =>
-      ['png', 'jpg', 'jpeg', 'webp', 'avif', 'bmp', 'heic', 'heif'].includes(
-        item.sourceFormat.toLowerCase()
-      )
-    );
-
-    if (imageItems.length === 0) {
-      alert('Please upload images to merge them into a single PDF.');
-      return;
-    }
-
-    try {
-      const files = imageItems.map((item) => item.file);
-      const result = await imagesToPdf(files, DEFAULT_OPTIONS);
-      await saveFileNatively(result.blob, result.fileName);
-    } catch (err) {
-      alert('Failed to combine images into PDF.');
-    }
+    sounds.playSuccess();
+    setIsConverting(false);
   };
 
   const handleDownloadAllZip = async () => {
     await downloadAllAsZip(items);
   };
 
-  const handleSaveOptions = (id: string, options: ConversionOptions) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, options } : item))
-    );
+  const handleClearAll = () => {
+    setItems([]);
+    setActiveItemId(null);
   };
 
-  const completedCount = items.filter((i) => i.status === 'completed').length;
-
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors">
-      <Header
-        darkMode={darkMode}
-        setDarkMode={setDarkMode}
+    <div className="relative min-h-screen w-full flex flex-col items-center justify-between overflow-x-hidden font-sans">
+      {/* Dynamic Ambient Fluid Mesh Gradient */}
+      <AmbientBackground theme={theme} />
+
+      {/* Floating Glass Top Bar */}
+      <FloatingHeader
+        theme={theme}
+        setTheme={setTheme}
+        soundEnabled={soundEnabled}
+        setSoundEnabled={setSoundEnabled}
+        activeView={activeView}
+        setActiveView={setActiveView}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
       />
 
-      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-8">
-        {activeTab === 'converter' ? (
-          <div>
-            {/* Hero Banner */}
-            <div className="text-center mb-8">
-              <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-3">
-                In-House Fast File Converter
-              </h1>
-              <p className="text-slate-600 dark:text-slate-400 text-sm sm:text-base max-w-2xl mx-auto">
-                Convert images and documents locally with zero cloud lag. Optimized for laptops, iPhone, and Android.
-              </p>
-            </div>
-
-            {/* Dropzone */}
-            <div className="mb-6">
-              <FileDropzone onFilesAdded={handleFilesAdded} />
-            </div>
-
-            {/* Toolbar */}
-            <ConversionToolbar
-              itemsCount={items.length}
-              completedCount={completedCount}
-              isConverting={isConvertingAll}
-              globalTarget={globalTarget}
-              onSetGlobalTarget={handleSetGlobalTarget}
-              onConvertAll={handleConvertAll}
-              onDownloadAllZip={handleDownloadAllZip}
-              onCombineToPdf={handleCombineToPdf}
-              onClearAll={handleClearAll}
+      {/* Main Interactive Stage */}
+      <main className="flex-1 w-full max-w-4xl mx-auto flex flex-col items-center justify-center px-4 py-20 z-10">
+        {activeView === 'dial' ? (
+          <div className="flex flex-col items-center justify-center w-full animate-in zoom-in-95 duration-300">
+            {/* The Innovative Radial Dial */}
+            <RadialDial
+              activeItem={activeItem}
+              onFilesAdded={handleFilesAdded}
+              onConvert={handleConvertActive}
+              isConverting={isConverting}
+              theme={theme}
             />
-
-            {/* File List */}
-            <FileList
-              items={items}
-              onUpdateTarget={handleUpdateTarget}
-              onRemoveItem={handleRemoveItem}
-              onConvertSingle={handleConvertSingle}
-              onOpenOptions={(item) => setSelectedItemForOptions(item)}
-            />
-
-            {/* Features Highlights */}
-            {items.length === 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-12">
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800/80 shadow-sm text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-4">
-                    <Zap className="w-6 h-6" />
-                  </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white mb-1.5 text-base">
-                    Instant & Offline
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Powered by WebAssembly & Canvas. Conversions run at local hardware speeds without waiting for network transfers.
-                  </p>
-                </div>
-
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800/80 shadow-sm text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto mb-4">
-                    <Lock className="w-6 h-6" />
-                  </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white mb-1.5 text-base">
-                    100% Private & In-House
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Files never leave your device memory. Full compliance with strict corporate and App Store privacy standards.
-                  </p>
-                </div>
-
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800/80 shadow-sm text-center">
-                  <div className="w-12 h-12 rounded-2xl bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center mx-auto mb-4">
-                    <Smartphone className="w-6 h-6" />
-                  </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white mb-1.5 text-base">
-                    Laptop & Mobile Ready
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Runs on any desktop browser or packages directly into native iOS and Android apps for App Store & Google Play.
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         ) : (
-          <PdfStudioTab />
+          <div className="w-full max-w-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-3xl p-6 border border-white/60 dark:border-white/10 shadow-2xl">
+            <PdfStudioTab />
+          </div>
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="mt-auto border-t border-slate-200/80 dark:border-slate-800/80 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
-        <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center space-x-1.5">
-            <Shield className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Local sandbox processing • Zero server bandwidth costs</span>
-          </div>
-          <button
-            onClick={() => setIsGuideOpen(true)}
-            className="hover:text-indigo-500 underline transition-colors"
-          >
-            How to publish to iOS & Android Stores
-          </button>
-        </div>
-      </footer>
+      {/* Floating Batch Carousel Dock (when 2+ files are queued) */}
+      <BatchDock
+        items={items}
+        activeItemId={activeItemId}
+        onSelectItem={(id) => setActiveItemId(id)}
+        onAddMore={() => {
+          const input = document.createElement('input');
+          input.type = 'file';
+          input.multiple = true;
+          input.onchange = (e) => {
+            const files = (e.target as HTMLInputElement).files;
+            if (files) handleFilesAdded(Array.from(files));
+          };
+          input.click();
+        }}
+        onClearAll={handleClearAll}
+        onConvertAll={handleConvertAll}
+        onDownloadAllZip={handleDownloadAllZip}
+        isConvertingAll={isConverting}
+      />
 
-      {/* Modals */}
-      <OptionsModal
-        item={selectedItemForOptions}
-        isOpen={Boolean(selectedItemForOptions)}
-        onClose={() => setSelectedItemForOptions(null)}
-        onSaveOptions={handleSaveOptions}
+      {/* Modals & Slide-over Drawers */}
+      <QuickSettingsDrawer
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        options={options}
+        setOptions={setOptions}
       />
 
       <PlatformGuideModal
