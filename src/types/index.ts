@@ -10,13 +10,13 @@ export interface ConversionOptions {
   resizeWidth?: number;
   resizeHeight?: number;
   maintainAspectRatio: boolean;
-  backgroundColor?: string; // e.g. '#ffffff' for transparent PNG -> JPEG
+  backgroundColor?: string;
 
   // PDF options
   pdfPageSize: 'fit' | 'a4' | 'letter';
   pdfOrientation: 'portrait' | 'landscape';
-  pdfMargin: number; // in pt
-  pdfDpi: number; // 72 to 300 for PDF to image rendering
+  pdfMargin: number;
+  pdfDpi: number;
 }
 
 export interface FileItem {
@@ -37,8 +37,30 @@ export interface FileItem {
   options: ConversionOptions;
 }
 
-export interface FormatCategory {
+export interface TextAnnotation {
   id: string;
-  label: string;
-  formats: { id: TargetFormat; label: string; description: string }[];
+  page: number;
+  xPercent: number; // 0 to 100 relative to page width
+  yPercent: number; // 0 to 100 relative to page height
+  text: string;
+  fontSize: number;
+  color: string;
+  isBold?: boolean;
+}
+
+export interface SignatureAnnotation {
+  id: string;
+  page: number;
+  xPercent: number;
+  yPercent: number;
+  widthPercent: number;
+  heightPercent: number;
+  dataUrl: string;
+}
+
+export interface WatermarkConfig {
+  enabled: boolean;
+  text: string;
+  opacity: number;
+  color: string;
 }

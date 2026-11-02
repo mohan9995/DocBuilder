@@ -19,8 +19,8 @@ interface FloatingHeaderProps {
   setTheme: (t: ThemePreset) => void;
   soundEnabled: boolean;
   setSoundEnabled: (val: boolean) => void;
-  activeView: 'dial' | 'pdf-studio';
-  setActiveView: (view: 'dial' | 'pdf-studio') => void;
+  activeView: 'dial' | 'doc-studio' | 'pdf-studio';
+  setActiveView: (view: 'dial' | 'doc-studio' | 'pdf-studio') => void;
   onOpenSettings: () => void;
   onOpenGuide: () => void;
 }
@@ -68,7 +68,17 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                 : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
             }`}
           >
-            Dial
+            Converter
+          </button>
+          <button
+            onClick={() => setActiveView('doc-studio')}
+            className={`px-3 py-1 rounded-xl text-xs font-semibold transition-all ${
+              activeView === 'doc-studio'
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-950 shadow-sm'
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+            }`}
+          >
+            Doc Studio & Sign
           </button>
           <button
             onClick={() => setActiveView('pdf-studio')}
@@ -78,7 +88,7 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
                 : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
             }`}
           >
-            PDF Studio
+            Merge PDFs
           </button>
         </div>
 

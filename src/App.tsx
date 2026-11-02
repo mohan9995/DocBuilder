@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BentoComparisonStage } from './components/BentoStudio/BentoComparisonStage';
 import { BentoFormatMatrix } from './components/BentoStudio/BentoFormatMatrix';
 import { BentoControlsTile } from './components/BentoStudio/BentoControlsTile';
+import { DocStudio } from './components/DocStudio/DocStudio';
 import { AmbientBackground, ThemePreset } from './components/AmbientBackground';
 import { FloatingHeader } from './components/FloatingHeader';
 import { BatchDock } from './components/BatchDock';
@@ -26,7 +27,7 @@ const INITIAL_OPTIONS: ConversionOptions = {
 export function App() {
   const [theme, setTheme] = useState<ThemePreset>('aurora'); // Default to sleek Cosmic Aurora for Concept B
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [activeView, setActiveView] = useState<'dial' | 'pdf-studio'>('dial');
+  const [activeView, setActiveView] = useState<'dial' | 'doc-studio' | 'pdf-studio'>('dial');
   const [items, setItems] = useState<FileItem[]>([]);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [targetFormat, setTargetFormat] = useState<TargetFormat>('webp');
@@ -273,7 +274,7 @@ export function App() {
         onOpenGuide={() => setIsGuideOpen(true)}
       />
 
-      {/* Main Interactive Stage: Concept B (The Bento Studio) */}
+      {/* Main Interactive Stage */}
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-20 pb-28 z-10 flex flex-col justify-center">
         {activeView === 'dial' ? (
           <div className="space-y-5 animate-in fade-in duration-300">
@@ -318,6 +319,10 @@ export function App() {
                 isConverting={isConverting}
               />
             </div>
+          </div>
+        ) : activeView === 'doc-studio' ? (
+          <div className="w-full max-w-4xl mx-auto animate-in fade-in duration-300">
+            <DocStudio initialFile={activeItem?.file && activeItem.file.type === 'application/pdf' ? activeItem.file : null} />
           </div>
         ) : (
           <div className="w-full max-w-2xl mx-auto bg-slate-900/90 backdrop-blur-2xl rounded-3xl p-6 border border-slate-800 shadow-2xl">

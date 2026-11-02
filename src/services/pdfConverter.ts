@@ -1,8 +1,8 @@
-import { PDFDocument, PageSizes } from 'pdf-lib';
+import { PDFDocument, PageSizes, StandardFonts, rgb, degrees } from 'pdf-lib';
 import * as pdfjsLib from 'pdfjs-dist';
 // @ts-ignore
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.js?url';
-import type { ConversionOptions, TargetFormat } from '../types';
+import type { ConversionOptions, TargetFormat, TextAnnotation, SignatureAnnotation, WatermarkConfig } from '../types';
 import { loadImage } from './imageConverter';
 
 // Configure PDF.js worker
@@ -209,4 +209,116 @@ export async function splitPdf(
   const newPdfBytes = await newPdf.save();
   const blob = new Blob([new Uint8Array(newPdfBytes) as unknown as BlobPart], { type: 'application/pdf' });
   return { blob, fileName: `${baseName}_extracted.pdf` };
+}
+
+
+/**
+ * Bakes annotations, signatures, watermarks, rotations, and deletions permanently into a PDF document
+ */
+export async function bakePdfAnnotations(
+  file: File,
+  params: {
+    textAnnotations: TextAnnotation[];
+    signatures: SignatureAnnotation[];
+    watermark?: WatermarkConfig;
+    rotations?: Record<number, number>; // pageNumber (1-based) -> additional degrees
+    deletedPages?: number[]; // pageNumbers (1-based)
+  }
+): Promise<{ blob: Blob; fileName: string }> {
+  const fileBytes = await file.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(fileBytes);
+  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const totalPages = pdfDoc.getPageCount();
+
+  // Apply rotations
+  if (params.rotations) {
+    for (const [pageNumStr, deg] of Object.entries(params.rotations)) {
+      const pageNum = parseInt(pageNumStr);
+      if (pageNum >= 1 && pageNum <= totalPages) {
+        const page = pdfDoc.getPage(pageNum - 1);
+        const currentRot = page.getRotation().angle;
+        page.setRotation(degrees((currentRot + deg) % 360));
+      }
+    }
+  }
+
+  // Apply text annotations
+  for (const ann of params.textAnnotations) {
+    if (ann.page >= 1 && ann.page <= totalPages) {
+      const page = pdfDoc.getPage(ann.page - 1);
+      const { width, height } = page.getSize();
+      const x = (ann.xPercent / 100) * width;
+      const y = height - (ann.yPercent / 100) * height - ann.fontSize;
+
+      // Color parsing
+      let textColor = rgb(0.1, 0.1, 0.1);
+      if (ann.color === 'blue') textColor = rgb(0.1, 0.2, 0.8);
+      else if (ann.color === 'red') textColor = rgb(0.85, 0.15, 0.15);
+      else if (ann.color === 'white') textColor = rgb(1, 1, 1);
+
+      page.drawText(ann.text, {
+        x,
+        y,
+        size: ann.fontSize,
+        font: ann.isBold ? boldFont : regularFont,
+        color: textColor,
+      });
+    }
+  }
+
+  // Apply signatures
+  for (const sig of params.signatures) {
+    if (sig.page >= 1 && sig.page <= totalPages) {
+      const page = pdfDoc.getPage(sig.page - 1);
+      const { width, height } = page.getSize();
+      const sigBytes = await fetch(sig.dataUrl).then((res) => res.arrayBuffer());
+      const sigImage = await pdfDoc.embedPng(sigBytes);
+
+      const sigWidth = (sig.widthPercent / 100) * width;
+      const sigHeight = (sig.heightPercent / 100) * height;
+      const x = (sig.xPercent / 100) * width;
+      const y = height - (sig.yPercent / 100) * height - sigHeight;
+
+      page.drawImage(sigImage, {
+        x,
+        y,
+        width: sigWidth,
+        height: sigHeight,
+      });
+    }
+  }
+
+  // Apply watermarks
+  if (params.watermark && params.watermark.enabled && params.watermark.text) {
+    for (let i = 0; i < totalPages; i++) {
+      const page = pdfDoc.getPage(i);
+      const { width, height } = page.getSize();
+      page.drawText(params.watermark.text, {
+        x: width / 4,
+        y: height / 3,
+        size: 54,
+        font: boldFont,
+        color: rgb(0.7, 0.7, 0.7),
+        opacity: params.watermark.opacity || 0.2,
+        rotate: degrees(45),
+      });
+    }
+  }
+
+  // Delete pages (in reverse order to keep indices valid)
+  if (params.deletedPages && params.deletedPages.length > 0) {
+    const sortedDeletions = [...new Set(params.deletedPages)].sort((a, b) => b - a);
+    for (const pageNum of sortedDeletions) {
+      if (pageNum >= 1 && pageNum <= pdfDoc.getPageCount()) {
+        pdfDoc.removePage(pageNum - 1);
+      }
+    }
+  }
+
+  const bakedBytes = await pdfDoc.save();
+  const blob = new Blob([new Uint8Array(bakedBytes) as unknown as BlobPart], { type: 'application/pdf' });
+  const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+  return { blob, fileName: `${baseName}_signed.pdf` };
 }
