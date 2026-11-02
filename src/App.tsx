@@ -8,7 +8,6 @@ import { FloatingHeader } from './components/FloatingHeader';
 import { BatchDock } from './components/BatchDock';
 import { QuickSettingsDrawer } from './components/QuickSettingsDrawer';
 import { PdfStudioTab } from './components/PdfStudioTab';
-import { PlatformGuideModal } from './components/PlatformGuideModal';
 import { FileItem, TargetFormat, ConversionOptions } from './types';
 import { executeConversion, detectFormat } from './services/conversionEngine';
 import { convertImage } from './services/imageConverter';
@@ -33,7 +32,6 @@ export function App() {
   const [targetFormat, setTargetFormat] = useState<TargetFormat>('webp');
   const [isConverting, setIsConverting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [options, setOptions] = useState<ConversionOptions>(INITIAL_OPTIONS);
 
   // Live real-time preview URL for split-screen comparison
@@ -271,7 +269,6 @@ export function App() {
         activeView={activeView}
         setActiveView={setActiveView}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenGuide={() => setIsGuideOpen(true)}
       />
 
       {/* Main Interactive Stage */}
@@ -356,17 +353,12 @@ export function App() {
         isConvertingAll={isConverting}
       />
 
-      {/* Granular Preferences Drawer & Store Deployment Guide */}
+      {/* Granular Preferences Drawer */}
       <QuickSettingsDrawer
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         options={options}
         setOptions={setOptions}
-      />
-
-      <PlatformGuideModal
-        isOpen={isGuideOpen}
-        onClose={() => setIsGuideOpen(false)}
       />
     </div>
   );

@@ -1,18 +1,12 @@
 import React from 'react';
 import { ThemePreset } from './AmbientBackground';
 import {
-  ShieldCheck,
   Palette,
   Volume2,
   VolumeX,
-  FileText,
   Sliders,
-  HelpCircle,
-  Laptop,
-  Smartphone,
 } from 'lucide-react';
 import { sounds } from '../services/soundService';
-import { getPlatformName } from '../services/nativeShare';
 
 interface FloatingHeaderProps {
   theme: ThemePreset;
@@ -22,7 +16,6 @@ interface FloatingHeaderProps {
   activeView: 'dial' | 'doc-studio' | 'pdf-studio';
   setActiveView: (view: 'dial' | 'doc-studio' | 'pdf-studio') => void;
   onOpenSettings: () => void;
-  onOpenGuide: () => void;
 }
 
 export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
@@ -33,10 +26,8 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
   activeView,
   setActiveView,
   onOpenSettings,
-  onOpenGuide,
 }) => {
   const [isThemeOpen, setIsThemeOpen] = React.useState(false);
-  const platform = getPlatformName();
 
   const THEMES: { id: ThemePreset; name: string; dotColor: string }[] = [
     { id: 'tangerine', name: 'Tangerine Sunset', dotColor: 'bg-[#ff6a48]' },
@@ -162,16 +153,6 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
             title="Conversion Quality & Resize Settings"
           >
             <Sliders className="w-4 h-4" />
-          </button>
-
-          {/* Store / Publishing Guide */}
-          <button
-            onClick={onOpenGuide}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-950 text-xs font-bold hover:scale-105 active:scale-95 transition-all shadow-sm"
-            title="App Store & Google Play Packaging"
-          >
-            {platform === 'web' ? <Laptop className="w-3.5 h-3.5" /> : <Smartphone className="w-3.5 h-3.5" />}
-            <span className="hidden md:inline">App Stores</span>
           </button>
         </div>
       </div>
