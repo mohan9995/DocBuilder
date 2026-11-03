@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ShieldCheck,
   CreditCard,
@@ -22,7 +22,9 @@ export const HeroIntroduction: React.FC = () => {
   });
 
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pauseTimeoutRef = useRef<any>(null);
 
   const toggleExpand = () => {
     sounds.playTick();
@@ -35,19 +37,31 @@ export const HeroIntroduction: React.FC = () => {
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
-    const { scrollLeft, clientWidth } = scrollRef.current;
-    const index = Math.round(scrollLeft / (clientWidth * 0.75));
-    setActiveCardIndex(Math.min(FEATURES.length - 1, Math.max(0, index)));
+    const { scrollLeft } = scrollRef.current;
+    const cards = scrollRef.current.children;
+    if (!cards.length) return;
+
+    let closestIndex = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < cards.length; i++) {
+      const cardLeft = (cards[i] as HTMLElement).offsetLeft - scrollRef.current.offsetLeft;
+      const diff = Math.abs(cardLeft - scrollLeft);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIndex = i;
+      }
+    }
+    setActiveCardIndex(closestIndex);
   };
 
   const scrollToCard = (index: number) => {
     if (!scrollRef.current) return;
     const cards = scrollRef.current.children;
     if (cards[index]) {
-      (cards[index] as HTMLElement).scrollIntoView({
+      const targetCard = cards[index] as HTMLElement;
+      scrollRef.current.scrollTo({
+        left: targetCard.offsetLeft - scrollRef.current.offsetLeft,
         behavior: 'smooth',
-        inline: 'start',
-        block: 'nearest',
       });
       setActiveCardIndex(index);
     }
@@ -83,6 +97,33 @@ export const HeroIntroduction: React.FC = () => {
       badgeColor: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
     },
   ];
+
+  // Automatic looping scroll on mobile
+  useEffect(() => {
+    if (!isExpanded || isPaused) return;
+
+    const timer = setInterval(() => {
+      setActiveCardIndex((prev) => {
+        const next = (prev + 1) % FEATURES.length;
+        scrollToCard(next);
+        return next;
+      });
+    }, 3200);
+
+    return () => clearInterval(timer);
+  }, [isExpanded, isPaused, FEATURES.length]);
+
+  const handleUserInteractStart = () => {
+    setIsPaused(true);
+    clearTimeout(pauseTimeoutRef.current);
+  };
+
+  const handleUserInteractEnd = () => {
+    clearTimeout(pauseTimeoutRef.current);
+    pauseTimeoutRef.current = setTimeout(() => {
+      setIsPaused(false);
+    }, 4000);
+  };
 
   return (
     <div className="w-full mb-4 sm:mb-5 transition-all duration-300">
@@ -130,10 +171,14 @@ export const HeroIntroduction: React.FC = () => {
               </p>
             </div>
 
-            {/* 4 Feature Cards (Horizontal Scroll on Mobile, 4-col Grid on Desktop) */}
+            {/* 4 Feature Cards (Auto-Scrolling Horizontal Carousel on Mobile, 4-col Grid on Desktop) */}
             <div
               ref={scrollRef}
               onScroll={handleScroll}
+              onTouchStart={handleUserInteractStart}
+              onTouchEnd={handleUserInteractEnd}
+              onMouseEnter={handleUserInteractStart}
+              onMouseLeave={handleUserInteractEnd}
               className="flex md:grid md:grid-cols-4 gap-2.5 overflow-x-auto md:overflow-visible pb-1.5 md:pb-0 scroll-smooth snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-0.5 px-0.5"
             >
               {FEATURES.map((item, idx) => (
@@ -157,26 +202,20 @@ export const HeroIntroduction: React.FC = () => {
               ))}
             </div>
 
-            {/* Mobile Carousel Indicator Dots & Hint */}
-            <div className="flex md:hidden items-center justify-between pt-1.5 px-1 text-[10px] text-slate-500">
-              <span className="flex items-center space-x-1">
-                <span>Swipe cards</span>
-                <span>➔</span>
-              </span>
-              <div className="flex items-center space-x-1.5">
-                {FEATURES.map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => scrollToCard(idx)}
-                    className={`h-1.5 rounded-full transition-all duration-200 ${
-                      activeCardIndex === idx
-                        ? 'w-4 bg-indigo-500'
-                        : 'w-1.5 bg-slate-700 hover:bg-slate-600'
-                    }`}
-                    aria-label={`Go to feature ${idx + 1}`}
-                  />
-                ))}
-              </div>
+            {/* Mobile Carousel Indicator Dots (Centered, no text) */}
+            <div className="flex md:hidden items-center justify-center pt-2 gap-1.5">
+              {FEATURES.map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => scrollToCard(idx)}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    activeCardIndex === idx
+                      ? 'w-5 bg-indigo-500 shadow-sm shadow-indigo-500/50'
+                      : 'w-1.5 bg-slate-700 hover:bg-slate-600'
+                  }`}
+                  aria-label={`Go to feature ${idx + 1}`}
+                />
+              ))}
             </div>
           </div>
         ) : (
