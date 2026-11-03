@@ -80,18 +80,18 @@ export const BentoFormatMatrix: React.FC<BentoFormatMatrixProps> = ({
       ];
 
   return (
-    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-3xl border border-slate-800/80 p-5 sm:p-6 flex flex-col h-full shadow-2xl relative overflow-hidden backdrop-blur-xl">
+    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl border border-slate-800/80 p-3.5 sm:p-6 flex flex-col h-full shadow-2xl relative overflow-hidden backdrop-blur-xl">
       {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs">
+      <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800">
+        <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
             02
           </div>
-          <div>
-            <h3 className="font-bold text-white text-sm tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-bold text-white text-xs sm:text-sm tracking-tight truncate">
               Format Matrix by Intent
             </h3>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
               Select output standard for this conversion
             </p>
           </div>
@@ -99,15 +99,15 @@ export const BentoFormatMatrix: React.FC<BentoFormatMatrixProps> = ({
       </div>
 
       {/* Format Groups */}
-      <div className="flex-1 py-4 space-y-4 overflow-y-auto">
+      <div className="flex-1 py-3 sm:py-4 space-y-3 sm:space-y-4 overflow-y-auto">
         {GROUPS.map((group, gIdx) => (
-          <div key={gIdx} className="space-y-2">
-            <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-400">
+          <div key={gIdx} className="space-y-1.5 sm:space-y-2">
+            <div className="flex items-center space-x-1.5 text-[11px] sm:text-xs font-semibold text-slate-400">
               {group.icon}
               <span>{group.title}</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 xl:grid-cols-2 gap-1.5 sm:gap-2">
               {group.options.map((opt) => {
                 const isSelected = currentTarget === opt.format;
 
@@ -118,7 +118,7 @@ export const BentoFormatMatrix: React.FC<BentoFormatMatrixProps> = ({
                       sounds.playTick();
                       onSelectTarget(opt.format);
                     }}
-                    className={`relative p-3 rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between ${
+                    className={`relative p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all duration-200 flex flex-col justify-between ${
                       isSelected
                         ? 'bg-indigo-600/20 border-indigo-500 shadow-lg shadow-indigo-500/10 ring-1 ring-indigo-500'
                         : 'bg-slate-950/50 hover:bg-slate-800/60 border-slate-800/80 hover:border-slate-700'

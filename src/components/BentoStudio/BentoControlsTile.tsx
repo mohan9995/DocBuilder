@@ -42,18 +42,18 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
   const isCompleted = activeItem?.status === 'completed';
 
   return (
-    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-3xl border border-slate-800/80 p-5 sm:p-6 shadow-2xl relative overflow-hidden backdrop-blur-xl">
-      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6">
+    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl border border-slate-800/80 p-3.5 sm:p-6 shadow-2xl relative overflow-hidden backdrop-blur-xl">
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 sm:gap-6">
         {/* Left: Quality & Budget Sliders */}
-        <div className="flex-1 space-y-4">
+        <div className="flex-1 space-y-3 sm:space-y-4">
           <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300">
             <Gauge className="w-4 h-4 text-indigo-400" />
             <span>Optimization & Weight Tuning</span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
             {/* Real-time Quality Slider */}
-            <div className="space-y-1.5 bg-slate-950/40 p-3 rounded-2xl border border-slate-800/60">
+            <div className="space-y-1.5 bg-slate-950/40 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-800/60">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-slate-400">Quality & Compression</span>
                 <span className="font-mono font-bold text-indigo-400">
@@ -79,7 +79,7 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
             </div>
 
             {/* Quick Preset Buttons */}
-            <div className="space-y-1.5 bg-slate-950/40 p-3 rounded-2xl border border-slate-800/60">
+            <div className="space-y-1.5 bg-slate-950/40 p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border border-slate-800/60">
               <span className="text-slate-400 text-xs block">Target Size Budget</span>
               <div className="grid grid-cols-4 gap-1.5 pt-1">
                 {[

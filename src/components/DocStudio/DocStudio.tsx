@@ -443,23 +443,23 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       onPointerUp={handlePointerUp}
     >
       {/* Studio Top Control Strip */}
-      <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-3xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-slate-900/90 backdrop-blur-2xl border border-slate-800 rounded-2xl sm:rounded-3xl p-2.5 sm:p-4 shadow-xl flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         {/* Left: Tools */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {/* Add Text Tool */}
           <button
             onClick={() => {
               sounds.playTick();
               setActiveTool(activeTool === 'text' ? 'select' : 'text');
             }}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center space-x-1.5 transition-all ${
               activeTool === 'text'
                 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
             }`}
           >
-            <Type className="w-4 h-4" />
-            <span>Add Text</span>
+            <Type className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span><span className="hidden xs:inline">Add </span>Text</span>
           </button>
 
           {/* Help (i) Info Pin Tool */}
@@ -468,23 +468,23 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
               sounds.playTick();
               setActiveTool(activeTool === 'info-pin' ? 'select' : 'info-pin');
             }}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center space-x-1.5 transition-all ${
               activeTool === 'info-pin'
                 ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 ring-2 ring-blue-400'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
             }`}
             title="Drop an interactive (i) help pin with selectable popover text"
           >
-            <Info className="w-4 h-4 text-blue-400" />
-            <span>Help Pin (i)</span>
+            <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-400" />
+            <span>Help (i)</span>
           </button>
 
           {/* Signature Tool */}
           <button
             onClick={() => setIsSignatureModalOpen(true)}
-            className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center space-x-1.5 transition-all"
+            className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center space-x-1.5 transition-all"
           >
-            <PenTool className="w-4 h-4" />
+            <PenTool className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>Sign</span>
           </button>
 
@@ -494,52 +494,52 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
               sounds.playTick();
               setWatermark((prev) => ({ ...prev, enabled: !prev.enabled }));
             }}
-            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1.5 transition-all ${
+            className={`px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold flex items-center space-x-1.5 transition-all ${
               watermark.enabled
                 ? 'bg-amber-600/20 text-amber-400 border border-amber-500/40'
                 : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
             }`}
           >
-            <ShieldAlert className="w-4 h-4" />
+            <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{watermark.enabled ? `Watermark: ON` : 'Watermark'}</span>
           </button>
 
-          <div className="h-5 w-px bg-slate-800 hidden sm:block" />
+          <div className="h-4 sm:h-5 w-px bg-slate-800 hidden xs:block" />
 
           {/* Rotate Page */}
           <button
             onClick={handleRotateCurrentPage}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
             title="Rotate current page 90 degrees"
           >
-            <RotateCw className="w-4 h-4" />
+            <RotateCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
 
           {/* Delete Page */}
           <button
             onClick={handleDeleteCurrentPage}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400"
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-red-900/40 text-slate-400 hover:text-red-400"
             title="Delete current page"
           >
-            <Trash2 className="w-4 h-4" />
+            <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
 
         {/* Right: Export & File Open */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-1.5 sm:space-x-2">
           {file ? (
             <>
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+                className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
               >
-                Change File
+                Change
               </button>
 
               <button
                 onClick={handleExportPdf}
                 disabled={isExporting}
-                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 shadow-md transition-all active:scale-95 ${
+                className={`px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center space-x-1.5 shadow-md transition-all active:scale-95 ${
                   exportSuccess
                     ? 'bg-emerald-600 text-white'
                     : 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white shadow-indigo-600/30'
@@ -547,18 +547,18 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
               >
                 {isExporting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Baking PDF...</span>
+                    <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                    <span>Baking...</span>
                   </>
                 ) : exportSuccess ? (
                   <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Saved & Exported!</span>
+                    <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>Saved!</span>
                   </>
                 ) : (
                   <>
-                    <Download className="w-4 h-4" />
-                    <span>Export Final PDF</span>
+                    <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span>Export PDF</span>
                   </>
                 )}
               </button>
@@ -566,7 +566,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           ) : (
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20"
+              className="px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/20"
             >
               Open Document
             </button>
@@ -595,7 +595,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
 
       {/* Main Interactive Document Stage */}
       <div
-        className="relative bg-slate-950/80 border border-slate-800 rounded-3xl p-4 sm:p-8 flex flex-col items-center justify-center min-h-[500px] overflow-hidden shadow-2xl"
+        className="relative bg-slate-950/80 border border-slate-800 rounded-2xl sm:rounded-3xl p-2 sm:p-8 flex flex-col items-center justify-center min-h-[360px] sm:min-h-[500px] overflow-hidden shadow-2xl"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault();
@@ -728,7 +728,7 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
                         {/* Expandable Popover Card with User-Selectable & Copyable Text */}
                         {ann.isOpen && (
                           <div
-                            className="absolute top-9 left-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-2 border-blue-500/80 rounded-2xl p-3 shadow-2xl min-w-[260px] max-w-sm animate-in zoom-in-95 duration-150"
+                            className="absolute top-9 left-0 sm:left-1/2 sm:-translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border-2 border-blue-500/80 rounded-2xl p-3 shadow-2xl w-64 xs:w-72 sm:w-80 max-w-[calc(100vw-36px)] animate-in zoom-in-95 duration-150"
                             onClick={(e) => e.stopPropagation()}
                             onPointerDown={(e) => e.stopPropagation()}
                           >

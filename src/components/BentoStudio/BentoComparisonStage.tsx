@@ -113,24 +113,24 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
       : null;
 
   return (
-    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-3xl border border-slate-800/80 p-5 sm:p-6 flex flex-col h-full shadow-2xl relative overflow-hidden backdrop-blur-xl">
+    <div className="bg-slate-900/90 dark:bg-slate-900/90 rounded-2xl sm:rounded-3xl border border-slate-800/80 p-3.5 sm:p-6 flex flex-col h-full shadow-2xl relative overflow-hidden backdrop-blur-xl">
       {/* Top Header & Telemetry */}
-      <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-        <div className="flex items-center space-x-2.5">
-          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
+      <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-slate-800 gap-2">
+        <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
             01
           </div>
-          <div>
-            <h3 className="font-bold text-white text-sm tracking-tight flex items-center space-x-2">
-              <span>Live Stage & Comparison</span>
+          <div className="min-w-0">
+            <h3 className="font-bold text-white text-xs sm:text-sm tracking-tight flex items-center space-x-1.5 sm:space-x-2">
+              <span className="truncate">Live Stage & Comparison</span>
               {activeItem?.status === 'completed' && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0">
                   Ready
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-slate-400">
-              Drag slider to compare original vs converted quality in real-time
+            <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
+              Drag slider to compare quality in real-time
             </p>
           </div>
         </div>
@@ -139,9 +139,9 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
         {activeItem && (
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-all border border-slate-700"
+            className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] sm:text-xs font-semibold transition-all border border-slate-700 flex-shrink-0 whitespace-nowrap"
           >
-            Change File
+            Change
           </button>
         )}
       </div>
@@ -162,7 +162,7 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
       />
 
       {/* Main Preview / Split Stage */}
-      <div className="flex-1 my-4 min-h-[260px] sm:min-h-[340px] flex items-center justify-center relative rounded-2xl bg-slate-950/70 border border-slate-800/80 overflow-hidden">
+      <div className="flex-1 my-3 sm:my-4 min-h-[220px] sm:min-h-[340px] flex items-center justify-center relative rounded-xl sm:rounded-2xl bg-slate-950/70 border border-slate-800/80 overflow-hidden">
         {/* EMPTY STATE */}
         {!activeItem ? (
           <div

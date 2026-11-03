@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BentoComparisonStage } from './components/BentoStudio/BentoComparisonStage';
 import { BentoFormatMatrix } from './components/BentoStudio/BentoFormatMatrix';
 import { BentoControlsTile } from './components/BentoStudio/BentoControlsTile';
+import { HeroIntroduction } from './components/HeroIntroduction';
 import { DocStudio } from './components/DocStudio/DocStudio';
 import { AmbientBackground, ThemePreset } from './components/AmbientBackground';
 import { FloatingHeader } from './components/FloatingHeader';
@@ -272,13 +273,16 @@ export function App() {
       />
 
       {/* Main Interactive Stage */}
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-20 pb-28 z-10 flex flex-col justify-center">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-2.5 sm:px-6 pt-16 sm:pt-20 pb-28 z-10 flex flex-col justify-center">
+        {/* Value Proposition & Feature Highlights Banner */}
+        <HeroIntroduction />
+
         {activeView === 'dial' ? (
-          <div className="space-y-5 animate-in fade-in duration-300">
-            {/* Top Row: Two Bento Columns */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+          <div className="space-y-4 sm:space-y-5 animate-in fade-in duration-300">
+            {/* Top Row: Two Bento Columns (7/5 split on tablets & desktop, stacked on narrow phones) */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 lg:gap-5 items-stretch">
               {/* Tile 1: Live Comparison & Inspector Stage (7 cols) */}
-              <div className="lg:col-span-7 flex flex-col">
+              <div className="md:col-span-7 flex flex-col">
                 <BentoComparisonStage
                   activeItem={activeItem}
                   previewUrl={previewUrl}
@@ -289,7 +293,7 @@ export function App() {
               </div>
 
               {/* Tile 2: Intent-Driven Format Matrix (5 cols) */}
-              <div className="lg:col-span-5 flex flex-col">
+              <div className="md:col-span-5 flex flex-col">
                 <BentoFormatMatrix
                   activeItem={activeItem}
                   currentTarget={targetFormat}
