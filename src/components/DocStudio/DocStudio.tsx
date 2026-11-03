@@ -21,6 +21,8 @@ import {
   Info,
   Maximize2,
   Check,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { TextAnnotation, SignatureAnnotation, WatermarkConfig } from '../../types';
 import { SignatureModal } from './SignatureModal';
@@ -75,6 +77,84 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
   });
   const [pageRotations, setPageRotations] = useState<Record<number, number>>({});
   const [deletedPages, setDeletedPages] = useState<number[]>([]);
+
+  // History Stack for Undo / Redo
+  const [history, setHistory] = useState<{
+    textAnnotations: TextAnnotation[];
+    signatures: SignatureAnnotation[];
+    pageRotations: Record<number, number>;
+    deletedPages: number[];
+  }[]>([{ textAnnotations: [], signatures: [], pageRotations: {}, deletedPages: [] }]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const pushHistoryState = useCallback(
+    (
+      newTexts = textAnnotations,
+      newSigs = signatures,
+      newRots = pageRotations,
+      newDels = deletedPages
+    ) => {
+      setHistory((prev) => {
+        const next = prev.slice(0, historyIndex + 1);
+        return [
+          ...next,
+          {
+            textAnnotations: newTexts,
+            signatures: newSigs,
+            pageRotations: newRots,
+            deletedPages: newDels,
+          },
+        ];
+      });
+      setHistoryIndex((prev) => prev + 1);
+    },
+    [textAnnotations, signatures, pageRotations, deletedPages, historyIndex]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      sounds.playTick();
+      const prevSnapshot = history[historyIndex - 1];
+      setTextAnnotations(prevSnapshot.textAnnotations);
+      setSignatures(prevSnapshot.signatures);
+      setPageRotations(prevSnapshot.pageRotations);
+      setDeletedPages(prevSnapshot.deletedPages);
+      setHistoryIndex(historyIndex - 1);
+    }
+  }, [historyIndex, history]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      sounds.playTick();
+      const nextSnapshot = history[historyIndex + 1];
+      setTextAnnotations(nextSnapshot.textAnnotations);
+      setSignatures(nextSnapshot.signatures);
+      setPageRotations(nextSnapshot.pageRotations);
+      setDeletedPages(nextSnapshot.deletedPages);
+      setHistoryIndex(historyIndex + 1);
+    }
+  }, [historyIndex, history]);
+
+  // Keyboard shortcut listener for Cmd+Z / Ctrl+Z and Cmd+Shift+Z / Ctrl+Y
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement as HTMLElement)?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // Canvas & Container Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -158,11 +238,12 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           return;
         }
 
-        // Render PDF Document using PDF.js
+        // Render PDF Document using PDF.js with 100% on-device local cmaps
         const arrayBuffer = await file.arrayBuffer();
+        const cMapBase = typeof window !== 'undefined' ? new URL('cmaps/', window.location.href).href : './cmaps/';
         const loadingTask = pdfjsLib.getDocument({
           data: new Uint8Array(arrayBuffer),
-          cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+          cMapUrl: cMapBase,
           cMapPacked: true,
         });
 
@@ -341,9 +422,12 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {}
+    if (dragRef.current?.hasMoved) {
+      pushHistoryState();
+    }
     setDraggingId(null);
     dragRef.current = null;
-  }, []);
+  }, [pushHistoryState]);
 
   // Handle click on document canvas to insert text or info pin
   const handleStageClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -368,7 +452,9 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       isOpen: isCallout, // open immediately when created in pin mode
     };
 
-    setTextAnnotations((prev) => [...prev, newAnnotation]);
+    const nextTexts = [...textAnnotations, newAnnotation];
+    setTextAnnotations(nextTexts);
+    pushHistoryState(nextTexts, signatures, pageRotations, deletedPages);
     setActiveTool('select');
     sounds.playTick();
   };
@@ -384,17 +470,21 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       heightPercent: 12,
       dataUrl,
     };
-    setSignatures((prev) => [...prev, newSig]);
+    const nextSigs = [...signatures, newSig];
+    setSignatures(nextSigs);
+    pushHistoryState(textAnnotations, nextSigs, pageRotations, deletedPages);
     sounds.playDrop();
   };
 
   // Rotate page
   const handleRotateCurrentPage = () => {
     sounds.playTick();
-    setPageRotations((prev) => ({
-      ...prev,
-      [currentPage]: ((prev[currentPage] || 0) + 90) % 360,
-    }));
+    const nextRots = {
+      ...pageRotations,
+      [currentPage]: ((pageRotations[currentPage] || 0) + 90) % 360,
+    };
+    setPageRotations(nextRots);
+    pushHistoryState(textAnnotations, signatures, nextRots, deletedPages);
   };
 
   // Delete page
@@ -404,7 +494,9 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
       return;
     }
     sounds.playTick();
-    setDeletedPages((prev) => [...prev, currentPage]);
+    const nextDels = [...deletedPages, currentPage];
+    setDeletedPages(nextDels);
+    pushHistoryState(textAnnotations, signatures, pageRotations, nextDels);
   };
 
   // Bake & Export permanent PDF
@@ -505,6 +597,26 @@ export const DocStudio: React.FC<DocStudioProps> = ({ initialFile }) => {
           </button>
 
           <div className="h-4 sm:h-5 w-px bg-slate-800 hidden xs:block" />
+
+          {/* Undo */}
+          <button
+            onClick={handleUndo}
+            disabled={historyIndex <= 0}
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+            title="Undo (Ctrl+Z / Cmd+Z)"
+          >
+            <Undo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
+
+          {/* Redo */}
+          <button
+            onClick={handleRedo}
+            disabled={historyIndex >= history.length - 1}
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+            title="Redo (Ctrl+Shift+Z / Cmd+Shift+Z)"
+          >
+            <Redo2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </button>
 
           {/* Rotate Page */}
           <button

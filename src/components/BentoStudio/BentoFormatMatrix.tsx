@@ -130,8 +130,8 @@ export const BentoFormatMatrix: React.FC<BentoFormatMatrixProps> = ({
                           {opt.label}
                         </span>
                         {opt.recommended && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                            PRO
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            BEST
                           </span>
                         )}
                       </div>

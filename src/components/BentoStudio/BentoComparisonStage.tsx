@@ -188,7 +188,22 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
           /* LIVE COMPARISON SPLIT SCREEN */
           <div
             ref={containerRef}
-            className="relative w-full h-full flex items-center justify-center select-none overflow-hidden cursor-ew-resize"
+            role="slider"
+            aria-valuenow={Math.round(sliderPosition)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Image comparison before and after slider"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                setSliderPosition((p) => Math.max(0, p - 5));
+              } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                setSliderPosition((p) => Math.min(100, p + 5));
+              }
+            }}
+            className="relative w-full h-full flex items-center justify-center select-none overflow-hidden cursor-ew-resize focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded-2xl"
             onMouseDown={(e) => {
               setIsDragging(true);
               handlePointerMove(e.clientX);

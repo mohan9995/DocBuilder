@@ -34,6 +34,7 @@ export interface FileItem {
   resultFileName?: string;
   resultSize?: number;
   error?: string;
+  thumbnailUrl?: string;
   options: ConversionOptions;
 }
 

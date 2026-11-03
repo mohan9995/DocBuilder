@@ -7,6 +7,7 @@ interface BatchDockProps {
   items: FileItem[];
   activeItemId: string | null;
   onSelectItem: (id: string) => void;
+  onRemoveItem?: (id: string) => void;
   onAddMore: () => void;
   onClearAll: () => void;
   onConvertAll: (targetFormat: TargetFormat) => void;
@@ -18,6 +19,7 @@ export const BatchDock: React.FC<BatchDockProps> = ({
   items,
   activeItemId,
   onSelectItem,
+  onRemoveItem,
   onAddMore,
   onClearAll,
   onConvertAll,
@@ -51,16 +53,15 @@ export const BatchDock: React.FC<BatchDockProps> = ({
                     : 'border-white/60 dark:border-white/20 hover:scale-100 opacity-70 hover:opacity-100'
                 }`}
               >
-                {isImage ? (
+                {isImage && item.thumbnailUrl ? (
                   <img
-                    src={URL.createObjectURL(item.file)}
+                    src={item.thumbnailUrl}
                     alt={item.name}
                     className="w-full h-full object-cover"
-                    onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
                   />
                 ) : (
                   <div className="w-full h-full bg-slate-800 text-white flex items-center justify-center font-bold text-[10px]">
-                    PDF
+                    {item.sourceFormat.toUpperCase()}
                   </div>
                 )}
 

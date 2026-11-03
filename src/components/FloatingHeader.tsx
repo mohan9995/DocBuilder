@@ -41,12 +41,18 @@ export const FloatingHeader: React.FC<FloatingHeaderProps> = ({
       <div className="max-w-5xl mx-auto flex items-center justify-between gap-1.5 pointer-events-auto">
         {/* Brand & Mode Switcher Pill */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 p-1 rounded-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-white/60 dark:border-white/10 shadow-lg min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-orange-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white font-black text-xs sm:text-sm shadow-sm flex-shrink-0">
-            ⚡
-          </div>
-          <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-white px-1 tracking-tight hidden md:inline">
-            DocBuilder
-          </span>
+          <button
+            onClick={() => setActiveView('dial')}
+            className="flex items-center space-x-1 sm:space-x-1.5 focus:outline-none text-left"
+            title="DocBuilder Home"
+          >
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-orange-500 via-rose-500 to-indigo-600 flex items-center justify-center text-white font-black text-xs sm:text-sm shadow-sm flex-shrink-0">
+              ⚡
+            </div>
+            <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-white px-1 tracking-tight hidden md:inline">
+              DocBuilder
+            </span>
+          </button>
 
           <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-0.5 sm:mx-1 hidden xs:block" />
 

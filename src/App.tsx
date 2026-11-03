@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { BentoComparisonStage } from './components/BentoStudio/BentoComparisonStage';
 import { BentoFormatMatrix } from './components/BentoStudio/BentoFormatMatrix';
 import { BentoControlsTile } from './components/BentoStudio/BentoControlsTile';
@@ -9,6 +9,13 @@ import { FloatingHeader } from './components/FloatingHeader';
 import { BatchDock } from './components/BatchDock';
 import { QuickSettingsDrawer } from './components/QuickSettingsDrawer';
 import { PdfStudioTab } from './components/PdfStudioTab';
+import { PopularToolsSection } from './components/PopularToolsSection';
+import { SupportedFormatsSection } from './components/SupportedFormatsSection';
+import { PrivacyArchitectureSection } from './components/PrivacyArchitectureSection';
+import { FaqSection } from './components/FaqSection';
+import { Footer } from './components/Footer';
+import { LegalModal, LegalModalType } from './components/LegalModal';
+import { ROUTES_DATA } from './seo/routesData';
 import { FileItem, TargetFormat, ConversionOptions } from './types';
 import { executeConversion, detectFormat } from './services/conversionEngine';
 import { convertImage } from './services/imageConverter';
@@ -34,6 +41,65 @@ export function App() {
   const [isConverting, setIsConverting] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [options, setOptions] = useState<ConversionOptions>(INITIAL_OPTIONS);
+
+  // Dynamic Routing & Tool Mode Synchronization
+  const [pdfSubTab, setPdfSubTab] = useState<'merge' | 'split'>('merge');
+  const [legalModal, setLegalModal] = useState<LegalModalType>(null);
+  const [currentPath, setCurrentPath] = useState<string>('/');
+
+  const syncRouteFromPath = useCallback((path: string) => {
+    const cleanPath = path.replace(/\/$/, '') || '/';
+    setCurrentPath(cleanPath);
+    const route = ROUTES_DATA[cleanPath] || ROUTES_DATA['/'];
+    if (route) {
+      if (route.toolMode === 'dial') {
+        setActiveView('dial');
+        if (route.defaultTargetFormat) {
+          setTargetFormat(route.defaultTargetFormat as TargetFormat);
+        }
+      } else if (route.toolMode === 'doc-studio') {
+        setActiveView('doc-studio');
+      } else if (route.toolMode === 'pdf-studio') {
+        setActiveView('pdf-studio');
+        if (route.defaultPdfSubTab) {
+          setPdfSubTab(route.defaultPdfSubTab);
+        }
+      } else if (route.toolMode === 'legal' && route.legalType) {
+        setLegalModal(route.legalType);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      syncRouteFromPath(window.location.pathname);
+      const handlePop = () => syncRouteFromPath(window.location.pathname);
+      window.addEventListener('popstate', handlePop);
+      return () => window.removeEventListener('popstate', handlePop);
+    }
+  }, [syncRouteFromPath]);
+
+  const navigateToRoute = (path: string) => {
+    const cleanPath = path.replace(/\/$/, '') || '/';
+    if (typeof window !== 'undefined' && window.location.pathname !== cleanPath) {
+      window.history.pushState(null, '', cleanPath);
+    }
+    syncRouteFromPath(cleanPath);
+    if (!['/privacy', '/terms', '/about', '/contact'].includes(cleanPath)) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleHeaderViewChange = (view: 'dial' | 'doc-studio' | 'pdf-studio') => {
+    setActiveView(view);
+    let targetPath = '/';
+    if (view === 'doc-studio') targetPath = '/pdf-editor';
+    else if (view === 'pdf-studio') targetPath = '/merge-pdf';
+    if (typeof window !== 'undefined' && window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+      setCurrentPath(targetPath);
+    }
+  };
 
   // Live real-time preview URL for split-screen comparison
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -76,6 +142,8 @@ export function App() {
     const newItems: FileItem[] = files.map((file) => {
       const detected = detectFormat(file);
       const defaultTarget: TargetFormat = detected === 'pdf' ? 'jpeg' : 'webp';
+      const isImg = file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'ico'].includes(detected);
+      const thumb = isImg ? URL.createObjectURL(file) : undefined;
 
       return {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -87,6 +155,7 @@ export function App() {
         targetFormat: defaultTarget,
         status: 'idle',
         progress: 0,
+        thumbnailUrl: thumb,
         options: { ...options },
       };
     });
@@ -251,9 +320,32 @@ export function App() {
   };
 
   const handleClearAll = () => {
+    items.forEach((item) => {
+      if (item.thumbnailUrl) URL.revokeObjectURL(item.thumbnailUrl);
+      if (item.resultUrl) URL.revokeObjectURL(item.resultUrl);
+    });
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setItems([]);
     setActiveItemId(null);
     setPreviewUrl(null);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    const item = items.find((i) => i.id === id);
+    if (item) {
+      if (item.thumbnailUrl) URL.revokeObjectURL(item.thumbnailUrl);
+      if (item.resultUrl) URL.revokeObjectURL(item.resultUrl);
+    }
+    const remaining = items.filter((i) => i.id !== id);
+    setItems(remaining);
+    if (activeItemId === id) {
+      const next = remaining[0]?.id || null;
+      setActiveItemId(next);
+      if (next) {
+        const nextItem = remaining[0];
+        setTargetFormat(nextItem.targetFormat);
+      }
+    }
   };
 
   return (
@@ -268,7 +360,7 @@ export function App() {
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
         activeView={activeView}
-        setActiveView={setActiveView}
+        setActiveView={handleHeaderViewChange}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -326,11 +418,29 @@ export function App() {
             <DocStudio initialFile={activeItem?.file || null} />
           </div>
         ) : (
-          <div className="w-full max-w-2xl mx-auto bg-slate-900/90 backdrop-blur-2xl rounded-3xl p-6 border border-slate-800 shadow-2xl">
-            <PdfStudioTab />
+          <div className="w-full max-w-3xl mx-auto animate-in fade-in duration-300">
+            <PdfStudioTab defaultSubTab={pdfSubTab} />
           </div>
         )}
+
+        {/* Popular Document Tools */}
+        <PopularToolsSection onSelectTool={navigateToRoute} />
+
+        {/* Supported Formats & Engine Matrix */}
+        <SupportedFormatsSection />
+
+        {/* Privacy Architecture & Security Guarantee */}
+        <PrivacyArchitectureSection />
+
+        {/* Frequently Asked Questions */}
+        <FaqSection customFaqs={ROUTES_DATA[currentPath]?.faqs} />
       </main>
+
+      {/* Comprehensive SEO & Trust Footer */}
+      <Footer onNavigate={navigateToRoute} />
+
+      {/* Legal & Trust Modals (Privacy, Terms, About, Contact) */}
+      <LegalModal type={legalModal} onClose={() => setLegalModal(null)} />
 
       {/* Floating Batch Carousel Dock (when 2+ files are queued) */}
       <BatchDock
@@ -341,6 +451,7 @@ export function App() {
           const item = items.find((i) => i.id === id);
           if (item) setTargetFormat(item.targetFormat);
         }}
+        onRemoveItem={handleRemoveItem}
         onAddMore={() => {
           const input = document.createElement('input');
           input.type = 'file';

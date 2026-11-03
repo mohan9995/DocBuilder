@@ -162,12 +162,11 @@ export const HeroIntroduction: React.FC = () => {
           <div className="mt-2.5 pt-2.5 sm:mt-3 sm:pt-3 border-t border-slate-800/80 animate-in fade-in duration-200">
             {/* Title & Introduction Narrative */}
             <div className="max-w-3xl mb-2 sm:mb-3">
-              <h2 className="text-sm sm:text-base md:text-xl font-black text-white tracking-tight flex items-center space-x-2">
-                <span>Private Document Studio & High-Speed Converter</span>
-              </h2>
-              <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-                DocBuilder executes <strong>100% locally on your device</strong> with zero cloud uploads and zero subscriptions.
-                <span className="hidden sm:inline"> Your tickets, tax forms, and signatures never leave your browser memory.</span>
+              <h1 className="text-base sm:text-lg md:text-2xl font-black text-white tracking-tight flex items-center space-x-2">
+                <span>Your Documents. Your Privacy. Your Control.</span>
+              </h1>
+              <p className="mt-1 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
+                Free Online PDF & Image Tools. Convert, compress, merge, split and edit documents directly in your browser. No registration. No subscriptions. Your files stay on your device.
               </p>
             </div>
 

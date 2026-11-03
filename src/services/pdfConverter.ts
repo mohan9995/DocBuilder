@@ -108,7 +108,12 @@ export async function pdfToImages(
   const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
   const arrayBuffer = await file.arrayBuffer();
 
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+  const cMapBase = typeof window !== 'undefined' ? new URL('cmaps/', window.location.href).href : './cmaps/';
+  const loadingTask = pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: cMapBase,
+    cMapPacked: true,
+  });
   const pdf = await loadingTask.promise;
   const totalPages = pdf.numPages;
   const results: { blob: Blob; fileName: string; pageIndex?: number }[] = [];
