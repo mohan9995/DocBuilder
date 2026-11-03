@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   ShieldCheck,
   CreditCard,
@@ -14,13 +14,15 @@ import { sounds } from '../services/soundService';
 
 export const HeroIntroduction: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(() => {
-    // Optional: check localStorage if user previously minimized
     try {
       return localStorage.getItem('docbuilder_hero_collapsed') !== 'true';
     } catch {
       return true;
     }
   });
+
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const toggleExpand = () => {
     sounds.playTick();
@@ -29,6 +31,26 @@ export const HeroIntroduction: React.FC = () => {
     try {
       localStorage.setItem('docbuilder_hero_collapsed', nextState ? 'false' : 'true');
     } catch {}
+  };
+
+  const handleScroll = () => {
+    if (!scrollRef.current) return;
+    const { scrollLeft, clientWidth } = scrollRef.current;
+    const index = Math.round(scrollLeft / (clientWidth * 0.75));
+    setActiveCardIndex(Math.min(FEATURES.length - 1, Math.max(0, index)));
+  };
+
+  const scrollToCard = (index: number) => {
+    if (!scrollRef.current) return;
+    const cards = scrollRef.current.children;
+    if (cards[index]) {
+      (cards[index] as HTMLElement).scrollIntoView({
+        behavior: 'smooth',
+        inline: 'start',
+        block: 'nearest',
+      });
+      setActiveCardIndex(index);
+    }
   };
 
   const FEATURES = [
@@ -96,26 +118,30 @@ export const HeroIntroduction: React.FC = () => {
 
         {/* Expanded View: Headline, Description & 4 Feature Tiles */}
         {isExpanded ? (
-          <div className="mt-3 pt-3 border-t border-slate-800/80 animate-in fade-in duration-200">
+          <div className="mt-2.5 pt-2.5 sm:mt-3 sm:pt-3 border-t border-slate-800/80 animate-in fade-in duration-200">
             {/* Title & Introduction Narrative */}
-            <div className="max-w-3xl mb-3 sm:mb-4">
-              <h2 className="text-base sm:text-lg md:text-xl font-black text-white tracking-tight flex items-center space-x-2">
+            <div className="max-w-3xl mb-2 sm:mb-3">
+              <h2 className="text-sm sm:text-base md:text-xl font-black text-white tracking-tight flex items-center space-x-2">
                 <span>Private Document Studio & High-Speed Converter</span>
               </h2>
-              <p className="mt-1 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
-                DocBuilder executes <strong>100% locally on your device</strong> using client-side WebAssembly and browser memory.
-                Your personal IDs, reservation tickets, tax forms, and signatures <strong className="text-white underline decoration-emerald-500/50 underline-offset-2">never leave your phone or computer</strong> — with zero cloud uploads and zero subscription fees.
+              <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-slate-300/90 leading-relaxed">
+                DocBuilder executes <strong>100% locally on your device</strong> with zero cloud uploads and zero subscriptions.
+                <span className="hidden sm:inline"> Your tickets, tax forms, and signatures never leave your browser memory.</span>
               </p>
             </div>
 
-            {/* 4 Feature Cards */}
-            <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 gap-2.5">
+            {/* 4 Feature Cards (Horizontal Scroll on Mobile, 4-col Grid on Desktop) */}
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="flex md:grid md:grid-cols-4 gap-2.5 overflow-x-auto md:overflow-visible pb-1.5 md:pb-0 scroll-smooth snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] -mx-0.5 px-0.5"
+            >
               {FEATURES.map((item, idx) => (
                 <div
                   key={idx}
-                  className="bg-slate-950/60 border border-slate-800/70 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between hover:border-slate-700 transition-colors"
+                  className="w-[230px] xs:w-[250px] md:w-auto flex-shrink-0 md:flex-shrink snap-start bg-slate-950/60 border border-slate-800/70 rounded-xl sm:rounded-2xl p-2.5 sm:p-3 flex flex-col justify-between hover:border-slate-700 transition-colors"
                 >
-                  <div className="flex items-center space-x-2 mb-1.5">
+                  <div className="flex items-center space-x-2 mb-1">
                     <div className={`p-1.5 rounded-lg border ${item.badgeColor} flex-shrink-0`}>
                       {item.icon}
                     </div>
@@ -129,6 +155,28 @@ export const HeroIntroduction: React.FC = () => {
                   </p>
                 </div>
               ))}
+            </div>
+
+            {/* Mobile Carousel Indicator Dots & Hint */}
+            <div className="flex md:hidden items-center justify-between pt-1.5 px-1 text-[10px] text-slate-500">
+              <span className="flex items-center space-x-1">
+                <span>Swipe cards</span>
+                <span>➔</span>
+              </span>
+              <div className="flex items-center space-x-1.5">
+                {FEATURES.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => scrollToCard(idx)}
+                    className={`h-1.5 rounded-full transition-all duration-200 ${
+                      activeCardIndex === idx
+                        ? 'w-4 bg-indigo-500'
+                        : 'w-1.5 bg-slate-700 hover:bg-slate-600'
+                    }`}
+                    aria-label={`Go to feature ${idx + 1}`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ) : (
