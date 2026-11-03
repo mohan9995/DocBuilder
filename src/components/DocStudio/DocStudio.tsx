@@ -31,7 +31,7 @@ import { sounds } from '../../services/soundService';
 
 // Ensure PDF.js uses public static worker
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdf.worker.min.js', window.location.href).href;
 }
 
 interface DocStudioProps {

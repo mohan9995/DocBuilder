@@ -7,7 +7,7 @@ import { loadImage } from './imageConverter';
 
 // Configure PDF.js worker using public static asset
 if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdf.worker.min.js', window.location.href).href;
 }
 
 /**
