@@ -9,7 +9,11 @@ import {
   FileText,
   Sparkles,
   Camera,
+  Loader2,
+  Layers,
 } from 'lucide-react';
+import { generatePdfThumbnails, PageThumbnail } from '../../services/pdfPreviewService';
+import { DocumentPreviewModal } from '../DocumentPreviewModal';
 import { sounds } from '../../services/soundService';
 
 interface BentoComparisonStageProps {
@@ -36,6 +40,11 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
   // Original image URL
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
 
+  // PDF Preview State
+  const [pdfThumbnails, setPdfThumbnails] = useState<PageThumbnail[]>([]);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
   useEffect(() => {
     if (activeItem && activeItem.file.type.startsWith('image/')) {
       const url = URL.createObjectURL(activeItem.file);
@@ -60,6 +69,36 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
       setImageMeta(null);
     }
   }, [activeItem]);
+
+  // Handle PDF preview generation
+  useEffect(() => {
+    if (activeItem && (activeItem.sourceFormat === 'pdf' || activeItem.file.type === 'application/pdf')) {
+      let isCancelled = false;
+      setIsLoadingPdf(true);
+      setPdfThumbnails([]);
+
+      generatePdfThumbnails(activeItem.file, { maxDim: 320 })
+        .then(({ thumbnails }) => {
+          if (!isCancelled) {
+            setPdfThumbnails(thumbnails);
+            setIsLoadingPdf(false);
+          }
+        })
+        .catch((err) => {
+          if (!isCancelled) {
+            console.warn('PDF thumbnail generation failed:', err);
+            setIsLoadingPdf(false);
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+      };
+    } else {
+      setPdfThumbnails([]);
+      setIsLoadingPdf(false);
+    }
+  }, [activeItem?.id]);
 
   const handlePointerMove = useCallback(
     (clientX: number) => {
@@ -258,17 +297,82 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-white/80 text-[10px] font-medium border border-white/10">
               ◄ Drag slider to compare quality ►
             </div>
+
+            {/* Fullscreen Inspect button for image */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                sounds.playTick();
+                setIsPreviewModalOpen(true);
+              }}
+              className="absolute bottom-2 right-2 z-30 p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700/80 shadow-xl transition-all"
+              title="Inspect Full Resolution"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+            </button>
           </div>
         ) : (
           /* PDF OR DOCUMENT PREVIEW */
-          <div className="flex flex-col items-center justify-center p-6 text-center">
-            <FileText className="w-16 h-16 text-indigo-400 mb-3" />
-            <h4 className="text-white font-bold text-sm mb-1">{activeItem.name}</h4>
-            <p className="text-xs text-slate-400 font-mono mb-2">
-              PDF Document • {formatBytes(activeItem.size)}
-            </p>
+          <div className="relative w-full h-full flex flex-col items-center justify-center p-4 text-center select-none">
+            {isLoadingPdf ? (
+              <div className="flex flex-col items-center justify-center py-8">
+                <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mb-2" />
+                <p className="text-xs text-slate-400">Loading PDF document preview...</p>
+              </div>
+            ) : pdfThumbnails.length > 0 ? (
+              <div className="flex flex-col items-center max-w-sm w-full">
+                {/* Visual Cover Preview */}
+                <div
+                  onClick={() => {
+                    sounds.playTick();
+                    setIsPreviewModalOpen(true);
+                  }}
+                  className="group relative w-32 sm:w-40 aspect-[3/4] bg-white rounded-2xl overflow-hidden shadow-2xl border-2 border-slate-700/80 hover:border-indigo-500 cursor-pointer transition-all hover:scale-105 mb-2.5"
+                >
+                  <img
+                    src={pdfThumbnails[0].dataUrl}
+                    alt={activeItem.name}
+                    className="w-full h-full object-contain"
+                  />
+                  <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="px-3 py-1.5 rounded-xl bg-slate-900 text-xs font-bold text-white border border-slate-700 flex items-center space-x-1 shadow-lg">
+                      <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Preview Pages</span>
+                    </span>
+                  </div>
+                  <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-slate-900/90 text-[10px] font-mono text-white font-bold border border-slate-800">
+                    Page 1 of {pdfThumbnails.length}
+                  </span>
+                </div>
+
+                <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5 truncate max-w-xs">{activeItem.name}</h4>
+                <p className="text-[11px] text-slate-400 font-mono mb-2.5">
+                  PDF Document • {pdfThumbnails.length} {pdfThumbnails.length === 1 ? 'Page' : 'Pages'} • {formatBytes(activeItem.size)}
+                </p>
+
+                <button
+                  onClick={() => {
+                    sounds.playTick();
+                    setIsPreviewModalOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/25 flex items-center space-x-1.5 transition-all"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Preview & Inspect All Pages</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center">
+                <FileText className="w-16 h-16 text-indigo-400 mb-3" />
+                <h4 className="text-white font-bold text-sm mb-1">{activeItem.name}</h4>
+                <p className="text-xs text-slate-400 font-mono mb-2">
+                  PDF Document • {formatBytes(activeItem.size)}
+                </p>
+              </div>
+            )}
+
             {activeItem.status === 'completed' && activeItem.resultSize && (
-              <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
+              <span className="mt-2.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold">
                 Converted: {formatBytes(activeItem.resultSize)}
               </span>
             )}
@@ -304,6 +408,14 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
           )}
         </div>
       )}
+
+      {/* Full-Screen Document / Image Inspection Modal */}
+      <DocumentPreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        file={activeItem?.file || null}
+        thumbnails={pdfThumbnails}
+      />
     </div>
   );
 };

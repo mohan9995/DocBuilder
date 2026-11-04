@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { mergePdfs, splitPdf } from '../services/pdfConverter';
 import { saveFileNatively } from '../services/nativeShare';
+import { generatePdfThumbnails, PageThumbnail } from '../services/pdfPreviewService';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 import {
   FileText,
   Plus,
@@ -15,11 +17,63 @@ import {
   GripVertical,
   ShieldCheck,
   Upload,
+  Eye,
+  CheckSquare,
+  Square,
+  ZoomIn,
+  Check,
+  Layers,
 } from 'lucide-react';
 import { sounds } from '../services/soundService';
 
 interface PdfStudioTabProps {
   defaultSubTab?: 'merge' | 'split';
+}
+
+function parsePageRangeString(rangeStr: string, maxPages: number): number[] {
+  const pages: Set<number> = new Set();
+  const parts = rangeStr.split(',');
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (trimmed.includes('-')) {
+      const [startStr, endStr] = trimmed.split('-');
+      const start = parseInt(startStr);
+      const end = parseInt(endStr);
+      if (!isNaN(start) && !isNaN(end)) {
+        const min = Math.max(1, Math.min(start, end));
+        const max = Math.min(maxPages, Math.max(start, end));
+        for (let i = min; i <= max; i++) {
+          pages.add(i);
+        }
+      }
+    } else {
+      const num = parseInt(trimmed);
+      if (!isNaN(num) && num >= 1 && num <= maxPages) {
+        pages.add(num);
+      }
+    }
+  }
+  return Array.from(pages).sort((a, b) => a - b);
+}
+
+function formatPageNumbersToRange(pages: number[]): string {
+  if (pages.length === 0) return '';
+  const sorted = [...new Set(pages)].sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = sorted[0];
+  let end = start;
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+    } else {
+      ranges.push(start === end ? `${start}` : `${start}-${end}`);
+      start = sorted[i];
+      end = start;
+    }
+  }
+  ranges.push(start === end ? `${start}` : `${start}-${end}`);
+  return ranges.join(', ');
 }
 
 export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'merge' }) => {
@@ -45,6 +99,58 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
   const [splitSuccess, setSplitSuccess] = useState(false);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const splitInputRef = useRef<HTMLInputElement>(null);
+
+  // Split Visual Thumbnails State
+  const [splitThumbnails, setSplitThumbnails] = useState<PageThumbnail[]>([]);
+  const [isLoadingThumbnails, setIsLoadingThumbnails] = useState(false);
+  const [thumbnailProgress, setThumbnailProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
+
+  // Preview Modal State
+  const [previewModalFile, setPreviewModalFile] = useState<File | null>(null);
+  const [previewModalInitialPage, setPreviewModalInitialPage] = useState<number>(1);
+  const [previewModalThumbnails, setPreviewModalThumbnails] = useState<PageThumbnail[]>([]);
+
+  // Selected pages array derived from pageRange or state
+  const selectedPages = useMemo(() => {
+    const total = splitThumbnails.length || 9999;
+    return parsePageRangeString(pageRange, total);
+  }, [pageRange, splitThumbnails.length]);
+
+  // Generate thumbnails progressively when splitFile is selected
+  useEffect(() => {
+    if (!splitFile) {
+      setSplitThumbnails([]);
+      setThumbnailProgress({ current: 0, total: 0 });
+      return;
+    }
+
+    const abortController = new AbortController();
+    setIsLoadingThumbnails(true);
+    setSplitThumbnails([]);
+
+    generatePdfThumbnails(splitFile, {
+      maxDim: 320,
+      signal: abortController.signal,
+      onPageProgress: (thumb, totalPages) => {
+        setSplitThumbnails((prev) => [...prev, thumb]);
+        setThumbnailProgress({ current: thumb.pageNumber, total: totalPages });
+      },
+    })
+      .then(({ thumbnails }) => {
+        setSplitThumbnails(thumbnails);
+        setIsLoadingThumbnails(false);
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          console.error('Failed to generate PDF thumbnails:', err);
+        }
+        setIsLoadingThumbnails(false);
+      });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [splitFile]);
 
   const addMergeFiles = (files: File[]) => {
     const valid = files.filter(
@@ -79,6 +185,7 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         sounds.playDrop();
         setSplitFile(file);
+        setPageRange('1');
       }
     }
   };
@@ -106,6 +213,48 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  // Toggle single page selection in Split mode
+  const togglePageSelection = (pageNum: number) => {
+    sounds.playTick();
+    let next: number[];
+    if (selectedPages.includes(pageNum)) {
+      next = selectedPages.filter((p) => p !== pageNum);
+    } else {
+      next = [...selectedPages, pageNum].sort((a, b) => a - b);
+    }
+    setPageRange(formatPageNumbersToRange(next));
+  };
+
+  const handleSelectAllPages = () => {
+    sounds.playTick();
+    const all = splitThumbnails.map((t) => t.pageNumber);
+    setPageRange(formatPageNumbersToRange(all));
+  };
+
+  const handleClearPageSelection = () => {
+    sounds.playTick();
+    setPageRange('');
+  };
+
+  const handleSelectOddPages = () => {
+    sounds.playTick();
+    const odds = splitThumbnails.map((t) => t.pageNumber).filter((p) => p % 2 !== 0);
+    setPageRange(formatPageNumbersToRange(odds));
+  };
+
+  const handleSelectEvenPages = () => {
+    sounds.playTick();
+    const evens = splitThumbnails.map((t) => t.pageNumber).filter((p) => p % 2 === 0);
+    setPageRange(formatPageNumbersToRange(evens));
+  };
+
+  const openInspectionModal = (file: File, pageNumber: number = 1, thumbs: PageThumbnail[] = []) => {
+    sounds.playTick();
+    setPreviewModalFile(file);
+    setPreviewModalInitialPage(pageNumber);
+    setPreviewModalThumbnails(thumbs);
+  };
+
   const handleExecuteMerge = async () => {
     if (mergeFiles.length < 2) return;
     setIsMerging(true);
@@ -125,36 +274,18 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
 
   const handleExecuteSplit = async () => {
     if (!splitFile) return;
+    const total = splitThumbnails.length || 9999;
+    const pagesToExtract = parsePageRangeString(pageRange, total);
+
+    if (pagesToExtract.length === 0) {
+      alert('Please select or enter at least one page number to extract (e.g. 1, 3-5)');
+      return;
+    }
+
     setIsSplitting(true);
     setSplitSuccess(false);
 
     try {
-      // Parse ranges like "1, 2-4, 7"
-      const pagesToExtract: number[] = [];
-      const parts = pageRange.split(',');
-      for (const part of parts) {
-        const trimmed = part.trim();
-        if (trimmed.includes('-')) {
-          const [startStr, endStr] = trimmed.split('-');
-          const start = parseInt(startStr);
-          const end = parseInt(endStr);
-          if (!isNaN(start) && !isNaN(end)) {
-            for (let i = start; i <= end; i++) {
-              pagesToExtract.push(i);
-            }
-          }
-        } else {
-          const num = parseInt(trimmed);
-          if (!isNaN(num)) pagesToExtract.push(num);
-        }
-      }
-
-      if (pagesToExtract.length === 0) {
-        alert('Please enter valid page numbers to extract (e.g. 1, 3-5)');
-        setIsSplitting(false);
-        return;
-      }
-
       const { blob, fileName } = await splitPdf(splitFile, pagesToExtract);
       await saveFileNatively(blob, fileName);
       setSplitSuccess(true);
@@ -223,7 +354,7 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
                   PDF Merge Studio
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Reorder and combine multiple PDF documents into a single document on-device.
+                  Reorder, preview, and combine multiple PDF documents into a single document on-device.
                 </p>
               </div>
             </div>
@@ -273,7 +404,7 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                 {mergeFiles.map((file, idx) => (
                   <div
                     key={`${file.name}-${idx}`}
@@ -294,6 +425,19 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
                     </div>
 
                     <div className="flex items-center space-x-1 flex-shrink-0 ml-2">
+                      {/* Document Preview Button */}
+                      <button
+                        onClick={async () => {
+                          const { thumbnails } = await generatePdfThumbnails(file, { maxDim: 300 });
+                          openInspectionModal(file, 1, thumbnails);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-900 text-slate-300 hover:text-indigo-400 hover:bg-slate-800 border border-slate-800 transition-colors flex items-center space-x-1 text-xs"
+                        title="Preview this PDF document"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline text-[11px]">Preview</span>
+                      </button>
+
                       <button
                         onClick={() => moveMergeFile(idx, 'up')}
                         disabled={idx === 0}
@@ -371,20 +515,28 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
           )}
         </div>
       ) : (
-        /* Tool 2: Split PDFs */
+        /* Tool 2: Split PDFs with Visual Page Grid & Previewer */
         <div className="bg-slate-900/90 border border-slate-800 rounded-3xl p-5 sm:p-7 shadow-xl">
-          <div className="flex items-center space-x-3 mb-4 border-b border-slate-800 pb-3">
-            <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-              <Split className="w-5 h-5" />
+          <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <Split className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white">
+                  PDF Page Extractor & Splitter
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Preview all pages visually, click to select, or enter ranges to extract into a new document.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="text-base sm:text-lg font-bold text-white">
-                PDF Page Extractor & Splitter
-              </h3>
-              <p className="text-xs text-slate-400">
-                Extract specific pages or page ranges from any PDF into a new document.
-              </p>
-            </div>
+
+            {splitFile && splitThumbnails.length > 0 && (
+              <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                {selectedPages.length} of {splitThumbnails.length} pages selected
+              </span>
+            )}
           </div>
 
           <input
@@ -396,6 +548,7 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
               if (e.target.files && e.target.files[0]) {
                 sounds.playDrop();
                 setSplitFile(e.target.files[0]);
+                setPageRange('1');
                 e.target.value = '';
               }
             }}
@@ -429,7 +582,8 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
+              {/* File Info Bar */}
               <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950/60 border border-slate-800">
                 <div className="flex items-center space-x-3 min-w-0">
                   <FileText className="w-5 h-5 text-amber-400 flex-shrink-0" />
@@ -438,23 +592,73 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
                       {splitFile.name}
                     </p>
                     <p className="text-[10px] text-slate-500 font-mono">
-                      {formatSize(splitFile.size)}
+                      {formatSize(splitFile.size)} • {splitThumbnails.length > 0 ? `${splitThumbnails.length} pages` : 'Reading pages...'}
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setSplitFile(null)}
-                  className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
-                  title="Remove file"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+
+                <div className="flex items-center space-x-2 flex-shrink-0">
+                  {splitThumbnails.length > 0 && (
+                    <button
+                      onClick={() => openInspectionModal(splitFile, 1, splitThumbnails)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center space-x-1 border border-slate-700 transition-colors"
+                      title="Inspect PDF Document in Full Screen"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Full Preview</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setSplitFile(null);
+                      setSplitThumbnails([]);
+                      setPageRange('1');
+                    }}
+                    className="p-1.5 rounded-lg bg-slate-900 text-slate-400 hover:text-rose-400 border border-slate-800 transition-colors"
+                    title="Change PDF File"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-white mb-1.5 block">
-                  Page Numbers to Extract:
-                </label>
+              {/* Range Input & Quick Preset Buttons */}
+              <div className="bg-slate-950/40 p-4 rounded-2xl border border-slate-800/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-white flex items-center space-x-1.5">
+                    <span>Pages to Extract:</span>
+                    <span className="text-slate-400 font-normal font-mono text-[11px]">(Click cards below or edit range)</span>
+                  </label>
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <button
+                      onClick={handleSelectAllPages}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={handleSelectOddPages}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                    >
+                      Odd
+                    </button>
+                    <button
+                      onClick={handleSelectEvenPages}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+                    >
+                      Even
+                    </button>
+                    <button
+                      onClick={handleClearPageSelection}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-800/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-300 border border-slate-700/60 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
                 <input
                   type="text"
                   value={pageRange}
@@ -462,39 +666,121 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
                   placeholder="e.g. 1, 3-5, 8"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white outline-none focus:ring-2 focus:ring-amber-500 text-sm font-mono"
                 />
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="text-[11px] text-slate-500">Quick Presets:</span>
-                  <button
-                    onClick={() => setPageRange('1')}
-                    className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    Page 1
-                  </button>
-                  <button
-                    onClick={() => setPageRange('1-3')}
-                    className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    Pages 1-3
-                  </button>
-                  <button
-                    onClick={() => setPageRange('1-5')}
-                    className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-slate-800 hover:bg-slate-700 text-slate-300"
-                  >
-                    Pages 1-5
-                  </button>
-                </div>
               </div>
 
-              <div className="flex justify-end pt-3 border-t border-slate-800">
+              {/* Progressive Thumbnail Grid with Page Numbers */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+                    <Layers className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Visual Page Selector</span>
+                  </h4>
+                  {isLoadingThumbnails && (
+                    <div className="flex items-center space-x-1.5 text-[11px] text-amber-400 font-mono">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>Loading page {thumbnailProgress.current} of {thumbnailProgress.total}...</span>
+                    </div>
+                  )}
+                </div>
+
+                {splitThumbnails.length === 0 && isLoadingThumbnails ? (
+                  <div className="py-12 text-center bg-slate-950/30 rounded-2xl border border-slate-800">
+                    <Loader2 className="w-8 h-8 text-amber-400 animate-spin mx-auto mb-2" />
+                    <p className="text-xs text-slate-400">Rendering high-speed visual page previews...</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[460px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                    {splitThumbnails.map((thumb) => {
+                      const isSelected = selectedPages.includes(thumb.pageNumber);
+
+                      return (
+                        <div
+                          key={thumb.pageNumber}
+                          onClick={() => togglePageSelection(thumb.pageNumber)}
+                          className={`group relative rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-150 flex flex-col bg-slate-950 shadow-md ${
+                            isSelected
+                              ? 'border-emerald-500 ring-2 ring-emerald-500/30 scale-[1.02]'
+                              : 'border-slate-800/80 hover:border-slate-600 hover:scale-[1.01]'
+                          }`}
+                        >
+                          {/* Top Card Badge: Page Number & Selection Indicator */}
+                          <div
+                            className={`flex items-center justify-between px-2.5 py-1.5 text-[11px] font-bold border-b transition-colors ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white border-emerald-500'
+                                : 'bg-slate-900 text-slate-300 border-slate-800'
+                            }`}
+                          >
+                            <span className="font-mono">Page {thumb.pageNumber}</span>
+                            <div className="flex items-center space-x-1">
+                              {/* Magnify / Inspect button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openInspectionModal(splitFile, thumb.pageNumber, splitThumbnails);
+                                }}
+                                className="p-1 rounded-md hover:bg-white/20 text-white transition-colors"
+                                title={`Inspect Page ${thumb.pageNumber} in Full Screen`}
+                              >
+                                <Eye className="w-3 h-3" />
+                              </button>
+                              {/* Checkbox indicator */}
+                              <div
+                                className={`w-4 h-4 rounded-full flex items-center justify-center ${
+                                  isSelected ? 'bg-white text-emerald-600' : 'border border-slate-600'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Rendered Thumbnail Container */}
+                          <div className="relative aspect-[3/4] w-full bg-white flex items-center justify-center overflow-hidden">
+                            <img
+                              src={thumb.dataUrl}
+                              alt={`Page ${thumb.pageNumber}`}
+                              className="w-full h-full object-contain"
+                              loading="lazy"
+                            />
+
+                            {/* Hover Overlay */}
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <span className="px-2.5 py-1 rounded-full bg-slate-900/90 text-[10px] font-bold text-white border border-slate-700 shadow-lg">
+                                {isSelected ? 'Click to Deselect' : 'Click to Select'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                <span className="text-xs text-slate-400">
+                  {selectedPages.length === 0 ? (
+                    <span className="text-rose-400">Please select at least 1 page to extract</span>
+                  ) : (
+                    <span>
+                      Extracting <strong className="text-white">{selectedPages.length}</strong> pages:{' '}
+                      <span className="font-mono text-emerald-400">{formatPageNumbersToRange(selectedPages)}</span>
+                    </span>
+                  )}
+                </span>
+
                 <button
                   onClick={handleExecuteSplit}
-                  disabled={isSplitting}
-                  className="px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition-all flex items-center space-x-2 active:scale-95 disabled:opacity-50"
+                  disabled={isSplitting || selectedPages.length === 0}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition-all flex items-center justify-center space-x-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSplitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Extracting Pages...</span>
+                      <span>Extracting {selectedPages.length} Pages...</span>
                     </>
                   ) : splitSuccess ? (
                     <>
@@ -504,7 +790,7 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
                   ) : (
                     <>
                       <Download className="w-4 h-4" />
-                      <span>Extract & Save Pages</span>
+                      <span>Extract {selectedPages.length} Selected {selectedPages.length === 1 ? 'Page' : 'Pages'}</span>
                     </>
                   )}
                 </button>
@@ -513,6 +799,17 @@ export const PdfStudioTab: React.FC<PdfStudioTabProps> = ({ defaultSubTab = 'mer
           )}
         </div>
       )}
+
+      {/* Full-Screen Document Inspection Modal */}
+      <DocumentPreviewModal
+        isOpen={!!previewModalFile}
+        onClose={() => setPreviewModalFile(null)}
+        file={previewModalFile}
+        initialPage={previewModalInitialPage}
+        selectedPages={selectedPages}
+        onTogglePageSelect={togglePageSelection}
+        thumbnails={previewModalThumbnails}
+      />
     </div>
   );
 };
