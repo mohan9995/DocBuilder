@@ -42,11 +42,11 @@ export const BentoFormatMatrix: React.FC<BentoFormatMatrixProps> = ({
           ],
         },
         {
-          title: 'Document Operations',
+          title: 'PDF Document Optimization',
           icon: <Printer className="w-4 h-4 text-emerald-400" />,
           options: [
-            { format: 'pdf', label: 'Single PDF', sublabel: 'Re-encode or split' },
-            { format: 'svg', label: 'SVG Frame', sublabel: 'Vector wrapper' },
+            { format: 'pdf', label: 'Compress PDF', sublabel: 'Shrink & optimize on-device', recommended: true },
+            { format: 'svg', label: 'SVG Frame', sublabel: 'Vector container' },
           ],
         },
       ]

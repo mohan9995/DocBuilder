@@ -23,6 +23,7 @@ interface DocumentPreviewModalProps {
   selectedPages?: number[];
   onTogglePageSelect?: (pageNumber: number) => void;
   thumbnails?: PageThumbnail[];
+  pageCount?: number;
 }
 
 export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
@@ -33,6 +34,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   selectedPages = [],
   onTogglePageSelect,
   thumbnails = [],
+  pageCount,
 }) => {
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [highResUrl, setHighResUrl] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
   const isPdf = file?.type === 'application/pdf' || file?.name.toLowerCase().endsWith('.pdf');
   const isImage = file?.type.startsWith('image/');
-  const totalPages = thumbnails.length || 1;
+  const totalPages = pageCount || thumbnails.length || 1;
 
   useEffect(() => {
     if (isOpen) {

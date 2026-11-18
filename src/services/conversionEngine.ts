@@ -1,6 +1,6 @@
 import type { FileItem } from '../types';
 import { convertImage } from './imageConverter';
-import { imagesToPdf, pdfToImages } from './pdfConverter';
+import { imagesToPdf, pdfToImages, compressPdf } from './pdfConverter';
 
 export function detectFormat(file: File): string {
   const nameParts = file.name.split('.');
@@ -98,6 +98,25 @@ export async function executeConversion(
       blob: zipBlob,
       fileName: `${baseName}_pages_${targetFormat}.zip`,
       size: zipBlob.size,
+    };
+  }
+
+  // Case 4: PDF to PDF Compression / Optimization
+  if (sourceFormat === 'pdf' && targetFormat === 'pdf') {
+    const result = await compressPdf(
+      item.file,
+      item.options,
+      (current, total) => {
+        if (onProgress) {
+          onProgress(Math.round((current / total) * 100));
+        }
+      }
+    );
+
+    return {
+      blob: result.blob,
+      fileName: result.fileName,
+      size: result.size,
     };
   }
 

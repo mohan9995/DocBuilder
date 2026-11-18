@@ -139,9 +139,22 @@ export function App() {
   }, []);
 
   const handleFilesAdded = (files: File[]) => {
+    const currentRoute = ROUTES_DATA[currentPath];
+    const routeDefaultTarget = currentRoute?.defaultTargetFormat as TargetFormat | undefined;
+
     const newItems: FileItem[] = files.map((file) => {
       const detected = detectFormat(file);
-      const defaultTarget: TargetFormat = detected === 'pdf' ? 'jpeg' : 'webp';
+      let defaultTarget: TargetFormat;
+
+      if (routeDefaultTarget) {
+        defaultTarget = routeDefaultTarget;
+      } else if (detected === 'pdf') {
+        // If on compress-pdf or target already set to pdf, compress PDF; otherwise default to pdf compression
+        defaultTarget = targetFormat === 'jpeg' && currentPath === '/pdf-to-jpg' ? 'jpeg' : 'pdf';
+      } else {
+        defaultTarget = targetFormat || 'webp';
+      }
+
       const isImg = file.type.startsWith('image/') || ['png', 'jpg', 'jpeg', 'webp', 'avif', 'gif', 'bmp', 'ico'].includes(detected);
       const thumb = isImg ? URL.createObjectURL(file) : undefined;
 

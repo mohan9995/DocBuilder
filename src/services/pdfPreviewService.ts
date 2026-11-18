@@ -19,6 +19,7 @@ export async function generatePdfThumbnails(
   file: File,
   options?: {
     maxDim?: number;
+    maxPages?: number;
     onPageProgress?: (page: PageThumbnail, totalPages: number) => void;
     signal?: AbortSignal;
   }
@@ -39,9 +40,13 @@ export async function generatePdfThumbnails(
 
   const pdf = await loadingTask.promise;
   const totalPages = pdf.numPages;
+  const pagesToRender = options?.maxPages ? Math.min(totalPages, options.maxPages) : totalPages;
   const thumbnails: PageThumbnail[] = [];
 
-  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  for (let pageNum = 1; pageNum <= pagesToRender; pageNum++) {
     if (options?.signal?.aborted) {
       break;
     }
@@ -53,12 +58,10 @@ export async function generatePdfThumbnails(
     const scale = Math.min(maxDim / unscaledViewport.width, maxDim / unscaledViewport.height);
     const viewport = page.getViewport({ scale });
 
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(viewport.width);
-    canvas.height = Math.round(viewport.height);
-    const ctx = canvas.getContext('2d');
-
     if (ctx) {
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+
       // Clean white background
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -80,6 +83,15 @@ export async function generatePdfThumbnails(
       if (options?.onPageProgress) {
         options.onPageProgress(thumb, totalPages);
       }
+
+      // Cleanup page and canvas memory
+      page.cleanup();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      canvas.width = 0;
+      canvas.height = 0;
+
+      // Yield to avoid blocking UI
+      await new Promise((r) => setTimeout(r, 0));
     }
   }
 
@@ -128,5 +140,11 @@ export async function renderHighResPage(
     viewport,
   }).promise;
 
-  return canvas.toDataURL('image/jpeg', 0.92);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  page.cleanup();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 0;
+  canvas.height = 0;
+
+  return dataUrl;
 }

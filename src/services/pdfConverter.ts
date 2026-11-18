@@ -429,3 +429,128 @@ export async function bakePdfAnnotations(
   const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
   return { blob, fileName: `${baseName}_signed.pdf` };
 }
+
+/**
+ * Compresses an existing PDF document on-device using adaptive resolution and DCT quantization.
+ * Especially powerful for scanned multi-page documents (hospital records, agreements, invoices).
+ */
+export async function compressPdf(
+  file: File,
+  options: ConversionOptions,
+  onProgress?: (current: number, total: number) => void
+): Promise<{ blob: Blob; fileName: string; size: number }> {
+  const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+  const arrayBuffer = await file.arrayBuffer();
+
+  const cMapBase = typeof window !== 'undefined' ? new URL('cmaps/', window.location.href).href : './cmaps/';
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(arrayBuffer),
+    cMapUrl: cMapBase,
+    cMapPacked: true,
+  });
+
+  const pdf = await loadingTask.promise;
+  const totalPages = pdf.numPages;
+
+  if (totalPages === 0) {
+    throw new Error('PDF document contains no pages to compress.');
+  }
+
+  const pdfDoc = await PDFDocument.create();
+
+  // Determine smart adaptive DPI and JPEG quality based on user options
+  const qualityFactor = options.quality ?? 0.85;
+
+  let targetDpi: number;
+  if (options.pdfDpi && options.pdfDpi !== 150) {
+    targetDpi = Math.max(72, Math.min(options.pdfDpi, 200));
+  } else {
+    if (qualityFactor >= 0.92) {
+      targetDpi = 150;
+    } else if (qualityFactor >= 0.78) {
+      targetDpi = 120;
+    } else if (qualityFactor >= 0.6) {
+      targetDpi = 100;
+    } else {
+      targetDpi = 85;
+    }
+  }
+
+  const jpegQuality = Math.max(0.35, Math.min(qualityFactor * 0.92, 0.88));
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) {
+    throw new Error('Failed to create canvas 2D rendering context for PDF compression.');
+  }
+
+  for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+    const page = await pdf.getPage(pageNum);
+    const unscaledViewport = page.getViewport({ scale: 1.0 });
+    const origWidth = unscaledViewport.width;
+    const origHeight = unscaledViewport.height;
+
+    let scale = targetDpi / 72;
+    // Cap maximum pixel dimension per page at 2400px to guarantee memory safety
+    const maxPixelDim = 2400;
+    if (origWidth * scale > maxPixelDim || origHeight * scale > maxPixelDim) {
+      scale = Math.min(maxPixelDim / origWidth, maxPixelDim / origHeight);
+    }
+
+    const viewport = page.getViewport({ scale });
+    canvas.width = Math.round(viewport.width);
+    canvas.height = Math.round(viewport.height);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+    }).promise;
+
+    const jpegBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => {
+          if (b) resolve(b);
+          else reject(new Error(`Failed to compress page ${pageNum} to JPEG`));
+        },
+        'image/jpeg',
+        jpegQuality
+      );
+    });
+
+    const jpegBytes = await jpegBlob.arrayBuffer();
+    const embeddedJpg = await pdfDoc.embedJpg(new Uint8Array(jpegBytes));
+
+    const newPage = pdfDoc.addPage([origWidth, origHeight]);
+    newPage.drawImage(embeddedJpg, {
+      x: 0,
+      y: 0,
+      width: origWidth,
+      height: origHeight,
+    });
+
+    // Immediate per-page memory cleanup to avoid mobile memory limits
+    page.cleanup();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.width = 0;
+    canvas.height = 0;
+
+    if (onProgress) {
+      onProgress(pageNum, totalPages);
+    }
+
+    // Micro-yield to browser event loop so UI stays responsive and GC can run
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  const compressedBytes = await pdfDoc.save({ useObjectStreams: true });
+  const blob = new Blob([new Uint8Array(compressedBytes) as unknown as BlobPart], { type: 'application/pdf' });
+
+  return {
+    blob,
+    fileName: `${baseName}_compressed.pdf`,
+    size: blob.size,
+  };
+}

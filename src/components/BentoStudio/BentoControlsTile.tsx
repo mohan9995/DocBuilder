@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   Loader2,
   RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { saveFileNatively, shareFile } from '../../services/nativeShare';
 import { sounds } from '../../services/soundService';
@@ -110,10 +111,22 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
 
         {/* Right: Primary CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-end gap-3 lg:pl-6 lg:border-l lg:border-slate-800">
+          {/* Error Banner */}
+          {activeItem?.status === 'error' && activeItem.error && (
+            <div
+              data-testid="conversion-error-banner"
+              className="w-full sm:w-auto flex items-center space-x-2 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs font-semibold"
+            >
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+              <span>{activeItem.error}</span>
+            </div>
+          )}
+
           {/* If already completed, show Save & Share options */}
           {isCompleted && activeItem?.resultBlob && activeItem.resultFileName ? (
             <div className="flex items-center space-x-2.5 w-full sm:w-auto">
               <button
+                data-testid="primary-save-btn"
                 onClick={() =>
                   activeItem.resultBlob &&
                   activeItem.resultFileName &&
@@ -122,7 +135,11 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
                 className="flex-1 sm:flex-none px-6 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-xl shadow-emerald-600/20 flex items-center justify-center space-x-2 transition-all active:scale-95"
               >
                 <Download className="w-4 h-4" />
-                <span>Save {targetFormat.toUpperCase()}</span>
+                <span>
+                  {activeItem.sourceFormat === 'pdf' && targetFormat === 'pdf'
+                    ? 'Save Compressed PDF'
+                    : `Save ${targetFormat.toUpperCase()}`}
+                </span>
               </button>
 
               <button
@@ -149,6 +166,7 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
           ) : (
             /* Primary Convert CTA */
             <button
+              data-testid="primary-convert-btn"
               onClick={onConvert}
               disabled={!activeItem || isConverting}
               className={`w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-sm shadow-xl transition-all flex items-center justify-center space-x-2.5 active:scale-95 ${
@@ -160,12 +178,20 @@ export const BentoControlsTile: React.FC<BentoControlsTileProps> = ({
               {isConverting ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Processing File...</span>
+                  <span>
+                    {activeItem?.sourceFormat === 'pdf' && targetFormat === 'pdf'
+                      ? 'Compressing Document...'
+                      : 'Processing File...'}
+                  </span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  <span>Convert to {targetFormat.toUpperCase()}</span>
+                  <span>
+                    {activeItem?.sourceFormat === 'pdf' && targetFormat === 'pdf'
+                      ? 'Compress & Optimize PDF'
+                      : `Convert to ${targetFormat.toUpperCase()}`}
+                  </span>
                 </>
               )}
             </button>

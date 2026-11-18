@@ -42,6 +42,7 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
 
   // PDF Preview State
   const [pdfThumbnails, setPdfThumbnails] = useState<PageThumbnail[]>([]);
+  const [pdfTotalPages, setPdfTotalPages] = useState<number>(1);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
@@ -70,32 +71,44 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
     }
   }, [activeItem]);
 
-  // Handle PDF preview generation
+  // Handle PDF preview generation progressively with abort signal
   useEffect(() => {
     if (activeItem && (activeItem.sourceFormat === 'pdf' || activeItem.file.type === 'application/pdf')) {
-      let isCancelled = false;
+      const abortController = new AbortController();
       setIsLoadingPdf(true);
       setPdfThumbnails([]);
+      setPdfTotalPages(1);
 
-      generatePdfThumbnails(activeItem.file, { maxDim: 320 })
-        .then(({ thumbnails }) => {
-          if (!isCancelled) {
-            setPdfThumbnails(thumbnails);
-            setIsLoadingPdf(false);
-          }
+      generatePdfThumbnails(activeItem.file, {
+        maxDim: 300,
+        signal: abortController.signal,
+        onPageProgress: (thumb, total) => {
+          setPdfThumbnails((prev) => {
+            if (prev.some((p) => p.pageNumber === thumb.pageNumber)) return prev;
+            return [...prev, thumb];
+          });
+          setPdfTotalPages(total);
+          setIsLoadingPdf(false);
+        },
+      })
+        .then(({ thumbnails, pageCount }) => {
+          setPdfThumbnails(thumbnails);
+          setPdfTotalPages(pageCount);
+          setIsLoadingPdf(false);
         })
         .catch((err) => {
-          if (!isCancelled) {
+          if (err?.name !== 'AbortError') {
             console.warn('PDF thumbnail generation failed:', err);
             setIsLoadingPdf(false);
           }
         });
 
       return () => {
-        isCancelled = true;
+        abortController.abort();
       };
     } else {
       setPdfThumbnails([]);
+      setPdfTotalPages(1);
       setIsLoadingPdf(false);
     }
   }, [activeItem?.id]);
@@ -341,13 +354,13 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
                     </span>
                   </div>
                   <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-slate-900/90 text-[10px] font-mono text-white font-bold border border-slate-800">
-                    Page 1 of {pdfThumbnails.length}
+                    Page 1 of {pdfTotalPages}
                   </span>
                 </div>
 
                 <h4 className="text-white font-bold text-xs sm:text-sm mb-0.5 truncate max-w-xs">{activeItem.name}</h4>
                 <p className="text-[11px] text-slate-400 font-mono mb-2.5">
-                  PDF Document • {pdfThumbnails.length} {pdfThumbnails.length === 1 ? 'Page' : 'Pages'} • {formatBytes(activeItem.size)}
+                  PDF Document • {pdfTotalPages} {pdfTotalPages === 1 ? 'Page' : 'Pages'} • {formatBytes(activeItem.size)}
                 </p>
 
                 <button
@@ -415,6 +428,7 @@ export const BentoComparisonStage: React.FC<BentoComparisonStageProps> = ({
         onClose={() => setIsPreviewModalOpen(false)}
         file={activeItem?.file || null}
         thumbnails={pdfThumbnails}
+        pageCount={pdfTotalPages}
       />
     </div>
   );
